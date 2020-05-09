@@ -1,0 +1,15 @@
+set_hold:
+  description: Sets hold mode.
+  fields:
+    activity:
+      description: The carrier activity name (lowercase)
+      example: "schedule"
+    temperature:
+      description: The target temperature for manual mode
+      example: "20.5"
+    until:
+      description: When the hold should end, in 15 minute increments
+      example: "17:15"
+
+clear_hold:
+  desciption: Clears any existing hold and goes back to schedule

@@ -1,0 +1,8 @@
+{
+  "domain": "carrier_infinity",
+  "name": "Carrier Infinity Thermostat",
+  "documentation": "https://www.github.com",
+  "dependencies": [],
+  "codeowners": ["@nfriess"],
+  "requirements": []
+}
