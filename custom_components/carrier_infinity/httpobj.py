@@ -6,6 +6,9 @@
 from datetime import datetime
 import re
 from urllib.parse import parse_qs
+import logging
+
+_LOGGER: logging.Logger = logging.getLogger(__package__)
 
 # This is populated by the URL handlers to define the mapping between a path
 # and the function that should be called.  This is an ordered list because
@@ -21,7 +24,9 @@ configuredURLs = []
 #
 def addUrl(reStr, func):
     global configuredURLs
+    #_LOGGER.debug("  URL Add {}".format(reStr))
     configuredURLs.append((re.compile(reStr), func))
+    #_LOGGER.debug(f"Dump Config'd URLs: {configuredURLs}")
 
 #
 # Filled in by the HTTP server and provided to URL handlers to contain the
