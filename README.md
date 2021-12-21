@@ -77,4 +77,5 @@ Carrier.  The other motivation is to try to make the HTTP server more maintainab
 than the Perl code in that project.
 
 The other project that formed a basis for the Home Assistant plugin is
-https://github.com/MizterB/homeassistant-infinitude
+https://github.com/MizterB/homeassistant-infinitude from which the HomeAssistant 
+Climate.py was based on.
