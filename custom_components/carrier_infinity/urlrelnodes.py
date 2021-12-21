@@ -8,13 +8,15 @@
 
 import logging
 
-from httpobj import HttpRequest, HttpResponse, addUrl
+from .httpobj import HttpRequest, HttpResponse, addUrl
+
+_LOGGER: logging.Logger = logging.getLogger(__package__)
 
 def urlRelNodes(request):
 
     hostAndPath = request.pathDict['hostAndPath']
 
-    logging.info("Fetch http://{}".format(hostAndPath))
+    _LOGGER.info("Fetch http://{}".format(hostAndPath))
 
     bodyStr = "Returned from python server"
 
