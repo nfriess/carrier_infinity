@@ -8,22 +8,27 @@
 import copy
 from datetime import datetime
 import logging
+import json
+import xmltodict
 import xml.etree.ElementTree as ET
+import requests
 
-from httpobj import HttpRequest, HttpResponse, addUrl
 
+from .httpobj import HttpRequest, HttpResponse, addUrl
 
+_LOGGER: logging.Logger = logging.getLogger(__package__)
 
 # This is data shared between the API module and this one.  It lives here since
 # the interaction with the thermostat is more critical than the API side and so
 # these variables are tightly coupled with this module.
-
 # The serial number of the thermostat
 activeThermostatId = None
 # Raw XML tree from the device's configuration last uploaded to us (../config
 # URL).  Also required to send updated configuration since we will use the
 # last known configuration and modify it as needed.
 configFromDevice = None
+configFromDeviceDict = {}
+systemstatus = {}
 # Parsed status of zones
 statusZones = {}
 # Parsed configuration of zones
@@ -31,7 +36,6 @@ configZones = {}
 # Some parsed status of device for API module to use
 currentMode = None
 tempUnits = None
-
 # The API module updates these variables for this module to use to send
 # configuration changes to the device.  Once the configuration has been
 # sent to the device (next time it polls for an update) these variables
@@ -41,17 +45,303 @@ pendingActionActivity = None
 pendingActionTemp = None
 pendingActionUntil = None
 
+# This is probably not localized and therefore is a static list
+INFINITY_WEEKDAY_IDS = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday"
+]
 
 
+def makeApiResponse(code, message, body, contentType=None):
+
+    if code == 200:
+        response = HttpResponse.okResponse()
+    else:
+        response = HttpResponse.errorResponse(code, message)
+
+    if body:
+        response.addContentLengthHeader(len(body))
+        response.addContentTypeHeader(contentType)
+        response.body = body
+
+    response.addDateHeader()
+
+    return response
 
 
+def findNextActivity(periods, now):
+
+    periodStart = datetime.now()
+
+    periodIdList = list(periods)
+    periodIdList.sort()
+
+    for periodId in periodIdList:
+        period = periods[periodId]
+
+        if not period["enabled"]:
+            continue
+
+        (hour, minute) = period["time"].split(":", 1)
+        periodStart = periodStart.replace(hour=int(hour), minute=int(minute), second=0, microsecond=0)
+
+        if now < periodStart:
+            return period["time"]
+
+    return None
 
 
+def urlApiZoneSetHold(request):
+    global activeThermostatId
+    global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+    global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
+    global INFINITY_WEEKDAY_IDS
+
+    zoneId = request.pathDict['zoneId']
+
+    holdValue = False
+    if "hold" in request.bodyDict:
+        holdValue = (request.bodyDict['hold'][0] == "on")
+
+    activityValue = None
+    if "activity" in request.bodyDict:
+        activityValue = request.bodyDict['activity'][0]
+
+    untilValue = None
+    if "until" in request.bodyDict:
+        untilValue = request.bodyDict['until'][0]
+
+    tempValue = None
+    if "temp" in request.bodyDict:
+        tempValue = request.bodyDict['temp'][0]
+
+    if not holdValue:
+        pendingActionHold = True
+        pendingActionActivity = None
+        pendingActionTemp = None
+        _LOGGER.info("Set pending hold=off")
+        return makeApiResponse(200, "OK", None)
+
+    if not activityValue or activityValue not in ("home", "away", "sleep", "wake", "manual"):
+        _LOGGER.info("Bad activity value: %s", activityValue)
+        return makeApiResponse(400, "Bad activity value", None)
+
+    if untilValue:
+
+        parts = untilValue.split(":")
+        if len(parts) != 2 or len(parts[1]) != 2:
+            _LOGGER.info("Bad until value: %s", untilValue)
+            return makeApiResponse(400, "Bad until value", None)
+
+        hourVal = int(parts[0])
+        minuteVal = int(parts[1])
+
+        if hourVal > 23 or hourVal < 0 or minuteVal > 59 or minuteVal < 0:
+            _LOGGER.info("Bad until value: %s", untilValue)
+            return makeApiResponse(400, "Bad until value", None)
+
+        if minuteVal not in (0, 15, 30, 45):
+            _LOGGER.info("until minute must be in 15 min increments: %s", untilValue)
+            return makeApiResponse(400, "until minute must be in 15 min increments", None)
+
+    else:
+
+        if zoneId not in configZones:
+            _LOGGER.info("Missing until value and no zone config")
+            return makeApiResponse(400, "Missing until value and no zone config", None)
+
+        zoneConfig = configZones[zoneId]
+
+        now = datetime.now()
+        weekdayId = INFINITY_WEEKDAY_IDS[now.weekday()]
+
+        periods = zoneConfig["schedule"][weekdayId]
+
+        activityEnd = findNextActivity(periods, now)
+
+        if not activityEnd:
+            # Next day
+
+            tomorrow = now + timedelta(days=1)
+
+            tomorrow.replace(hour=0, minute=0)
+
+            activityEnd = findNextActivity(periods, now)
+
+            if not activityEnd:
+                _LOGGER.info("Missing until value and cannot find next activity")
+                return makeApiResponse(400, "Missing until value and cannot find next activity", None)
+
+        untilValue = activityEnd
 
 
+    if activityValue == "manual":
+
+        if not tempValue:
+            _LOGGER.info("Missing temp value for manual")
+            return makeApiResponse(400, "Missing temp value for manual", None)
+
+        tempValue = float(tempValue)
+
+        if tempValue < 16 or tempValue > 24:
+            _LOGGER.info("temp value outside of range: %s", tempValue)
+            return makeApiResponse(400, "temp value outside of range", None)
+
+        testVal = tempValue * 2
+        if not testVal.is_integer():
+            _LOGGER.info("temp value must be in 0.5 increments: %s", tempValue)
+            return makeApiResponse(400, "temp value must be 0.5 increments", None)
+
+    pendingActionHold = True
+    pendingActionActivity = activityValue
+    pendingActionUntil = untilValue
+    pendingActionTemp = tempValue
+
+    _LOGGER.info("Set pending hold=on to {} until {} temp {}".format(pendingActionActivity, pendingActionUntil, pendingActionTemp))
+
+    empty = {}
+    return makeApiResponse(200, "OK", json.dumps(empty, sort_keys=True), "application/json")
+addUrl("/api/hold/(?P<zoneId>.+)$", urlApiZoneSetHold)
 
 
+def urlApiHold(request):
+    global activeThermostatId
+    global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+    global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
+    zoneId = request.pathDict['zoneId']
 
+    holdValue = False
+    if "hold" in request.bodyDict:
+        holdValue = request.bodyDict['hold'][0]
+
+    activityValue = None
+    if "holdActivity" in request.bodyDict:
+        activityValue = request.bodyDict['holdActivity'][0]
+
+    untilValue = None
+    if "otmr" in request.bodyDict:
+        untilValue = request.bodyDict['otmr'][0]
+
+    tempValue = None
+    if "temp" in request.bodyDict:
+        tempValue = request.bodyDict['temp'][0]
+
+    pendingActionHold = holdValue
+    pendingActionActivity = activityValue
+    pendingActionUntil = untilValue
+    pendingActionTemp = tempValue
+
+    _LOGGER.info("Set pending hold={} to {} until {} temp {}".format(holdValue, pendingActionActivity, pendingActionUntil, pendingActionTemp))
+    empty = {}
+    return makeApiResponse(200, "OK", json.dumps(empty, sort_keys=True), "application/json")
+addUrl("/api/config/zones/zone/(?P<zoneId>.+)/$", urlApiHold)
+
+
+def urlApiGetZoneField(request):
+    global activeThermostatId
+    global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+    global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
+    zoneId = request.pathDict['zoneId']
+    fieldName = request.pathDict['fieldName']
+
+    if zoneId not in statusZones:
+        return makeApiResponse(404, "No data", None)
+
+    zoneObj = statusZones[zoneId]
+
+    if fieldName not in zoneObj:
+        return makeApiResponse(404, "No such field", None)
+
+    return makeApiResponse(200, "OK", zoneObj[fieldName], "text/plain")
+addUrl("/api/status/(?P<zoneId>.+)/(?P<fieldName>.+)$", urlApiGetZoneField)
+
+
+def urlApiGetZoneAll(request):
+    global activeThermostatId
+    global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+    global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
+    zoneId = request.pathDict['zoneId']
+    if zoneId not in statusZones:
+        return makeApiResponse(404, "No data", None)
+
+    zoneObj = statusZones[zoneId]
+
+    return makeApiResponse(200, "OK", json.dumps(zoneObj), "application/json")
+addUrl("/api/status/(?P<zoneId>.+)$", urlApiGetZoneAll)
+
+def urlApiGetZoneConfig(request):
+    global activeThermostatId
+    global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+    global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
+    zoneId = request.pathDict['zoneId']
+    if zoneId not in configZones:
+        return makeApiResponse(404, "No data", None)
+
+    zoneObj = configZones[zoneId]
+
+    zoneObj["mode"] = currentMode
+    zoneObj["units"] = tempUnits
+
+    return makeApiResponse(200, "OK", json.dumps(zoneObj), "application/json")
+addUrl("/api/config/(?P<zoneId>.+)$", urlApiGetZoneConfig)
+
+def urlApiDeviceConfig(request):
+    global activeThermostatId
+    global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+    global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
+    if configFromDevice == None:
+        return makeApiResponse(200, "OK", None)
+    else:
+        return makeApiResponse(200, "OK", ET.tostring(configFromDevice, "utf-8"), "application/xml")
+addUrl("/api/deviceConfig$", urlApiDeviceConfig)
+
+
+def urlApiConfig(request):
+    global activeThermostatId
+    global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+    global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
+    empty = {}
+    if configFromDeviceDict == None:
+        return makeApiResponse(200, "OK", json.dumps(empty, sort_keys=True), "application/json")
+    else:
+        return makeApiResponse(200, "OK", json.dumps(configFromDeviceDict["system"], sort_keys=True), "application/json")
+addUrl("/api/config", urlApiConfig)
+
+def urlApiStatus(request):
+    global activeThermostatId
+    global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+    global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
+    empty = {}
+    if systemstatus == None:
+        return makeApiResponse(200, "OK", json.dumps(empty,sort_keys=True), "application/json")
+    else:
+        return makeApiResponse(200, "OK", json.dumps(systemstatus["status"],sort_keys=True), "application/json")
+addUrl("/api/status", urlApiStatus)
+
+def urlApiPendingActions(request):
+    global activeThermostatId
+    global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+    global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
+    if pendingActionHold != None:
+        return makeApiResponse(200, "OK", "yes", "text/plain")
+    else:
+        return makeApiResponse(200, "OK", "no", "text/plain")
+addUrl("/api/pendingActions", urlApiPendingActions)
+
+
+#========================================================================================================
+#========================================================================================================
+#========================================================================================================
+#========================================================================================================
+#========================================================================================================
+#========================================================================================================
+#========================================================================================================
+#========================================================================================================
 
 # Information about the device (serial numbers and modules) but not
 # current configuration.
@@ -59,8 +349,8 @@ def urlSystemsProfile(request):
 
 	xmlBodyStr = request.bodyDict["data"][0]
 
-	logging.debug("  SN={}".format(request.pathDict["serialNumber"]))
-	logging.debug("  body={}".format(xmlBodyStr))
+	#_LOGGER.debug("  SN={}".format(request.pathDict["serialNumber"]))
+	_LOGGER.info("  body={}".format(xmlBodyStr))
 
 	response = HttpResponse.okResponse()
 
@@ -72,7 +362,6 @@ def urlSystemsProfile(request):
 	response.addContentLengthHeader(0)
 
 	return response
-
 addUrl("/systems/(?P<serialNumber>.+)/profile$", urlSystemsProfile)
 
 
@@ -83,8 +372,8 @@ def urlSystemsDealer(request):
 
     xmlBodyStr = request.bodyDict["data"][0]
 
-    logging.debug("  SN={}".format(request.pathDict["serialNumber"]))
-    logging.debug("  body={}".format(xmlBodyStr))
+    #_LOGGER.debug("  SN={}".format(request.pathDict["serialNumber"]))
+    _LOGGER.info("  body={}".format(xmlBodyStr))
 
     response = HttpResponse.okResponse()
 
@@ -97,7 +386,6 @@ def urlSystemsDealer(request):
     response.addContentLengthHeader(0)
 
     return response
-
 addUrl("/systems/(?P<serialNumber>.+)/dealer$", urlSystemsDealer)
 
 
@@ -107,8 +395,8 @@ def urlSystemsIDUConfig(request):
 
     xmlBodyStr = request.bodyDict["data"][0]
 
-    logging.debug("  SN={}".format(request.pathDict["serialNumber"]))
-    logging.debug("  body={}".format(xmlBodyStr))
+    #_LOGGER.debug("  SN={}".format(request.pathDict["serialNumber"]))
+    _LOGGER.info("  body={}".format(xmlBodyStr))
 
     response = HttpResponse.okResponse()
 
@@ -121,9 +409,27 @@ def urlSystemsIDUConfig(request):
     response.addContentLengthHeader(0)
 
     return response
-
 addUrl("/systems/(?P<serialNumber>.+)/idu_config$", urlSystemsIDUConfig)
 
+def urlSystemsidu_faults(request):
+
+	#_LOGGER.info("  SN={}".format(request.pathDict["serialNumber"]))
+	xmlStringData = request.bodyDict["data"][0]
+	_LOGGER.info("  idu_faults={}".format(xmlStringData))
+
+	return makeSimpleXMLResponse()
+addUrl("/systems/(?P<serialNumber>.+)/idu_faults$", urlSystemsidu_faults)
+
+# Device tells us about its internal furance devices (built-in heating?)
+def urlSystemsIDUStatus(request):
+
+	xmlBodyStr = request.bodyDict["data"][0]
+
+	#_LOGGER.debug("  SN={}".format(request.pathDict["serialNumber"]))
+	_LOGGER.info("  body={}".format(xmlBodyStr))
+
+	return makeSimpleXMLResponse()
+addUrl("/systems/(?P<serialNumber>.+)/idu_status$", urlSystemsIDUStatus)
 
 
 # Device tells us about its external furnace devices (air conditioning? secondary
@@ -132,8 +438,8 @@ def urlSystemsODUConfig(request):
 
     xmlBodyStr = request.bodyDict["data"][0]
 
-    logging.debug("  SN={}".format(request.pathDict["serialNumber"]))
-    logging.debug("  body={}".format(xmlBodyStr))
+    #_LOGGER.debug("  SN={}".format(request.pathDict["serialNumber"]))
+    _LOGGER.info("  body={}".format(xmlBodyStr))
 
     response = HttpResponse.okResponse()
 
@@ -146,8 +452,27 @@ def urlSystemsODUConfig(request):
     response.addContentLengthHeader(0)
 
     return response
-
 addUrl("/systems/(?P<serialNumber>.+)/odu_config$", urlSystemsODUConfig)
+
+def urlSystemsodu_faults(request):
+
+	#_LOGGER.info("  SN={}".format(request.pathDict["serialNumber"]))
+	xmlStringData = request.bodyDict["data"][0]
+	_LOGGER.info("  odu_faults={}".format(xmlStringData))
+
+	return makeSimpleXMLResponse()
+addUrl("/systems/(?P<serialNumber>.+)/odu_faults$", urlSystemsodu_faults)
+
+# Device tells us about its internal furance devices (built-in heating?)
+def urlSystemsODUStatus(request):
+
+	xmlBodyStr = request.bodyDict["data"][0]
+
+	#_LOGGER.debug("  SN={}".format(request.pathDict["serialNumber"]))
+	_LOGGER.info("  body={}".format(xmlBodyStr))
+
+	return makeSimpleXMLResponse()
+addUrl("/systems/(?P<serialNumber>.+)/odu_status$", urlSystemsODUStatus)
 
 
 
@@ -180,7 +505,7 @@ def makeSystemsStatusResponse(request, serverHasChanges, configHasChanges):
 	statusRoot.append(tsEl)
 
 	el = ET.Element("pingRate")
-	el.text = "10"
+	el.text = "30"
 	statusRoot.append(el)
 
 	el = ET.Element("iduStatusPingRate")
@@ -275,24 +600,23 @@ def makeSystemsStatusResponse(request, serverHasChanges, configHasChanges):
 
 
 def urlSystemsStatus(request):
-
-	global configFromDevice
-	global statusZones
-	global currentMode
-	global tempUnits
-
+	global activeThermostatId
+	global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+	global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
 	xmlStringData = request.bodyDict["data"][0]
 
-	logging.debug("  SN={}".format(request.pathDict["serialNumber"]))
+	#_LOGGER.debug("  SN={}".format(request.pathDict["serialNumber"]))
 
 	xmlRoot = ET.fromstring(xmlStringData)
 
 	if xmlRoot.attrib['version'] != "1.7":
-		logging.warning("Unexpected client version: %s" % (xmlRoot.attrib['version'], ))
+		_LOGGER.warning("Unexpected client version: %s" % (xmlRoot.attrib['version'], ))
 		return makeSystemsStatusResponse(request, False, False)
 
 	currentMode = xmlRoot.find("./cfgtype").text
 	tempUnits = xmlRoot.find("./cfgem").text
+
+	systemstatus = xmltodict.parse(xmlStringData)
 
 	statusZones = {}
 
@@ -321,17 +645,16 @@ def urlSystemsStatus(request):
 
 
 	if pendingActionHold:
-		logging.info("Returned has status changes")
+		_LOGGER.info("Returned has status changes")
 		response = makeSystemsStatusResponse(request, True, True)
 	elif not configFromDevice:
-		logging.info("Returned want config")
+		_LOGGER.info("Returned want config")
 		response = makeSystemsStatusResponse(request, True, True)
 	else:
-		logging.info("Returned NO status changes")
+		_LOGGER.debug("Returned NO status changes")
 		response = makeSystemsStatusResponse(request, False, False)
 
 	return response
-
 addUrl("/systems/(?P<serialNumber>.+)/status$", urlSystemsStatus)
 
 
@@ -339,7 +662,9 @@ addUrl("/systems/(?P<serialNumber>.+)/status$", urlSystemsStatus)
 # I don't have utility events set up in the themostat to test this.
 def urlSystemsUtilityEvents(request):
 
-	logging.debug("  SN={}".format(request.pathDict["serialNumber"]))
+	#_LOGGER.info("  SN={}".format(request.pathDict["serialNumber"]))
+	#xmlStringData = request.bodyDict["data"][0]
+	#_LOGGER.info("  UtilEvents={}".format(xmlStringData))
 
 	utilityXMLStr = '<utility_events version="1.42" xmlns:atom="http://www.w3.org/2005/Atom"/>'
 
@@ -356,8 +681,52 @@ def urlSystemsUtilityEvents(request):
 	response.body = utilityXMLStr
 
 	return response
-
 addUrl("/systems/(?P<serialNumber>.+)/utility_events$", urlSystemsUtilityEvents)
+
+def urlSystemsEquipment_Events(request):
+
+	#_LOGGER.info("  SN={}".format(request.pathDict["serialNumber"]))
+	xmlStringData = request.bodyDict["data"][0]
+	_LOGGER.info("  Equipment_Events={}".format(xmlStringData))
+
+	return makeSimpleXMLResponse()
+addUrl("/systems/(?P<serialNumber>.+)/equipment_events$", urlSystemsEquipment_Events)
+
+def urlSystemsroot_cause(request):
+
+	#_LOGGER.info("  SN={}".format(request.pathDict["serialNumber"]))
+	xmlStringData = request.bodyDict["data"][0]
+	_LOGGER.info("  root_cause={}".format(xmlStringData))
+
+	return makeSimpleXMLResponse()
+addUrl("/systems/(?P<serialNumber>.+)/root_cause$", urlSystemsroot_cause)
+
+def urlSystemsequipment_events(request):
+
+	#_LOGGER.info("  SN={}".format(request.pathDict["serialNumber"]))
+	xmlStringData = request.bodyDict["data"][0]
+	_LOGGER.info("  equipment_events={}".format(xmlStringData))
+
+	return makeSimpleXMLResponse()
+addUrl("/systems/(?P<serialNumber>.+)/equipment_events$", urlSystemsequipment_events)
+
+
+def urlSystemsEnergy(request):
+
+	xmlStringData = request.bodyDict["data"][0]
+	_LOGGER.info("  Energy={}".format(xmlStringData))
+
+	return makeSimpleXMLResponse()
+addUrl("/systems/(?P<serialNumber>.+)/energy$", urlSystemsEnergy)
+
+
+def urlSystemsHistory(request):
+
+	xmlStringData = request.bodyDict["data"][0]
+	_LOGGER.info("  History={}".format(xmlStringData))
+
+	return makeSimpleXMLResponse()
+addUrl("/systems/(?P<serialNumber>.+)/history$", urlSystemsHistory)
 
 
 
@@ -365,7 +734,7 @@ addUrl("/systems/(?P<serialNumber>.+)/utility_events$", urlSystemsUtilityEvents)
 # configuration.  This both confirms a configuration change that we may have
 # requested in the .../config response, but also if a person changes the config
 # on the thermostat's touch screen.
-def makeSystemsNotificationsResponse():
+def makeSimpleXMLResponse():
 
 	response = HttpResponse.okResponse()
 
@@ -384,27 +753,26 @@ def urlSystemsNotifications(request):
 
 	xmlStringData = request.bodyDict["data"][0]
 
-	logging.debug("  SN={}".format(request.pathDict["serialNumber"]))
+	_LOGGER.info("  SN={}".format(request.pathDict["serialNumber"]))
 
 	xmlRoot = ET.fromstring(xmlStringData)
 
 	if xmlRoot.attrib['version'] != "1.7":
-		logging.warning("Unexpected client version: %s" % (xmlRoot.attrib['version'], ))
-		return makeSystemsNotificationsResponse()
+		_LOGGER.warning("Unexpected client version: %s" % (xmlRoot.attrib['version'], ))
+		return makeSimpleXMLResponse()
 
 	responseCode = xmlRoot.find("./notification/code").text
 	responseMessage = xmlRoot.find("./notification/message").text
 
 	if responseCode != "200":
-		logging.warning("Thermostat responded with code: %s, message %s" % (responseCode, responseMessage))
-		return makeSystemsNotificationsResponse()
+		_LOGGER.warning("Thermostat responded with code: %s, message %s" % (responseCode, responseMessage))
+		return makeSimpleXMLResponse()
 
 	# Save for api access?
 
-	logging.info("Thermostat notification: %s %s" % (responseCode, responseMessage))
+	_LOGGER.info("Thermostat notification: %s %s" % (responseCode, responseMessage))
 
-	return makeSystemsNotificationsResponse()
-
+	return makeSimpleXMLResponse()
 addUrl("/systems/(?P<serialNumber>.+)/notifications$", urlSystemsNotifications)
 
 
@@ -429,17 +797,12 @@ def makeSystemsConfigResponse(xmlBodyStr):
 
 
 def urlSystemsConfig(request):
-
-	global configFromDevice
-	global pendingActionHold
-	global pendingActionActivity
-	global pendingActionUntil
-	global pendingActionTemp
-
-
+	global activeThermostatId
+	global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+	global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
 	serialNumber = request.pathDict["serialNumber"]
 
-	logging.debug("  SN={}".format(serialNumber))
+	_LOGGER.debug("  SN={}".format(serialNumber))
 
 	# Can't return config unless we know what the device is already using
 	if configFromDevice == None:
@@ -497,7 +860,6 @@ def urlSystemsConfig(request):
 
 	xmlDataStr = ET.tostring(newConfigRoot, "utf-8")
 	return makeSystemsConfigResponse(xmlDataStr)
-
 addUrl("/systems/(?P<serialNumber>.+)/config$", urlSystemsConfig)
 
 
@@ -523,42 +885,10 @@ def urlSystemsRootCause(request):
 
 	xmlStringData = request.bodyDict["data"][0]
 
-	logging.info("Root Cause {}".format(xmlStringData))
+	_LOGGER.info("Root Cause {}".format(xmlStringData))
 
 	return makeSystemsRootCauseResponse()
-
 addUrl("/systems/(?P<serialNumber>.+)/root_cause$", urlSystemsRootCause)
-
-
-
-# The device is telling us about about faults in external devices?
-def makeSystemsOduFaultsResponse():
-
-	response = HttpResponse.errorResponse(404, "Not found")
-	#response = HttpResponse.okResponse()
-
-	#response.headers.append(("Cache-Control", "private"))
-	#response.addContentTypeHeader("application/xml; charset=utf-8")
-	#response.addServerHeader()
-	#response.addRequestContextHeader()
-	#response.addAccessControlHeader()
-	#response.addDateHeader()
-	#response.addContentLengthHeader(0)
-
-	return response
-
-
-def urlSystemsOduFaults(request):
-
-	xmlStringData = request.bodyDict["data"][0]
-
-	logging.info("ODU faults {}".format(xmlStringData))
-
-	return makeSystemsOduFaultsResponse()
-
-addUrl("/systems/(?P<serialNumber>.+)/odu_faults$", urlSystemsOduFaults)
-
-
 
 
 # The device is telling us about its configuration.  It appears that just about
@@ -579,24 +909,20 @@ def makeSystemsResponse():
 
 	return response
 
-
-
-def urlSystems(request):
-
+def urlsystems(request):
 	global activeThermostatId
-	global configFromDevice
-	global configZones
-
+	global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+	global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
 	serialNumber = request.pathDict["serialNumber"]
 	xmlStringData = request.bodyDict["data"][0]
 
-	logging.debug("  SN={}".format(serialNumber))
-	logging.debug("  body={}".format(xmlStringData))
+	_LOGGER.debug("  SN={}".format(serialNumber))
+	_LOGGER.info("  body={}".format(xmlStringData))
 
 	xmlRoot = ET.fromstring(xmlStringData)
 
 	if xmlRoot.attrib['version'] != "1.7":
-		logging.warning("Unexpected client version: %s" % (xmlRoot.attrib['version'], ))
+		_LOGGER.warning("Unexpected client version: %s" % (xmlRoot.attrib['version'], ))
 		return makeSystemsResponse()
 
 	currentMode = xmlRoot.find("./config/mode").text
@@ -604,7 +930,8 @@ def urlSystems(request):
 
 	activeThermostatId = serialNumber
 	configFromDevice = xmlRoot.find("./config")
-
+	configFromDeviceDict = xmltodict.parse(xmlStringData)
+	
 	configZones = {}
 
 	for zone in xmlRoot.findall("./config/zones/zone"):
@@ -652,5 +979,4 @@ def urlSystems(request):
 
 
 	return makeSystemsResponse()
-
-addUrl("/systems/(?P<serialNumber>[^/]+)$", urlSystems)
+addUrl("/systems/(?P<serialNumber>[^/]+)$", urlsystems)
