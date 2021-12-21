@@ -1,29 +1,32 @@
 # Carrier Infinity Thermostat Controller
 
+Also compatible with Bryant and likely ICP Brands Ion (including Airquest, Arcoaire, 
+Comfortmaker, Day&Night, Heil, Keeprite, Tempstar).
+
 This repository contains an HTTP server that can be used to replace the official
 Carrier web service that Carrier Infinity thermostats communicate with.  The
 idea is to provide a complete replacement for the HTTP server that Carrier runs,
 allowing full remote control of the thermostat using open source applications like
 [Home Assistant](https://www.home-assistant.io/).
 
-Currently the weather data is still obtained from Carrier's server.
+Currently the weather data is still obtained from Carrier's server. Everything else
+is local only. This integration breaks Carrier APP and goes all local (except weather).
 
 # Components
 
-The HTTP server that communicates with the thermostat is in the infinity_proxy/
-directory.  A custom component for Home Assistant that will communicate with the
-HTTP server is in homeassistant/.
+The HTTPServer and HTTPClient have been merged into a single application. Utilizing a 
+thread for the server and HomeAssistant Sync for the Client.
 
 # How to Use
 
 ## HTTP Server
 
-Start the HTTP server in infinity_proxy/http_server.py.  It will listen on port
-5000.  In the thermostatic configuration, go to Wifi and Advanced Settings.
-Turn on the proxy setting, enter the IP address of the system running
-http_server.py and port 5000.
+The HTTP serer is now integrated into HomeAssistant Add-On. It will listen on 
+port the configured port (default=5000).  In the thermostatic configuration, 
+go to Wifi and Advanced Settings. Turn on the proxy setting, enter the IP address 
+of the HomeAssitant and configured port.
 
-Note that it will take a while for the thermostat to connect to http_server.py
+Note that it will take a while for the thermostat to connect
 and completely refresh itself.  In the meanwhile the wifi status may show the
 warning symbol acting as though there are connection problems.  After a hour
 or more it will eventually settle down and the warning symbol will disappear.
