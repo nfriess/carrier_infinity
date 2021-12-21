@@ -33,21 +33,43 @@ must succeed (sometimes more than once) before the warning symbol disappears.
 
 ## Home Assistant Control
 
-Copy the carrier_infinity/ directory under homeassistant/ here into the
-config/custom_components/ directory of your Home Assistant installation. Add
-configuration such as the following to tell Home Assistant where the HTTP server
+Copy the custom_components/carrier_infinity/ directory under homeassistant/ 
+here into the config/custom_components/ directory of your Home Assistant 
+installation. Alternatively, download via HACS.
+
+Add configuration such as the following to tell Home Assistant where the HTTP server
 is running:
 
     climate:
       - platform: carrier_infinity
-        host: infinity.internal.cus
+        host: HomeAssistantIP
         port: 5000
+    
+    climate:
+      - platform: carrier_infinity
+        host: my.spr.scrt.ip
+        port: 5000
+        pushover_user: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+        pushover_token: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+        zone_names:
+          - House_Furnace_Carr
+        scan_interval: 300
 
 Restart Home Assistant and the thermostat will appear.  Initially Home Assistant
 may not show real data from the actual thermostat.  The thermostat must check in
 with the HTTP server before any status information can be determined.  Likewise,
 temperature and other settings cannot be adjusted until the thermostat has sent
 its current configuration to the HTTP server.
+
+On restart of HomeAssistant the integration hangs and will await the thermostat 
+to post before completing the startup.
+
+# Pushover
+
+I use Pushover to send notifications. Other API options could easily be adapted.
+Currently the Pushover is sending furnace notifications (similar to emails from 
+Carrier/Bryant) and energy statistics. HTTPServer.py-Handle can easily be modified
+for other messages to be sent to an API.
 
 # Design
 
