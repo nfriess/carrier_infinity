@@ -6,9 +6,10 @@
 # as-is.
 #
 
+import os
 from datetime import datetime
 
-from httpobj import HttpRequest, HttpResponse, addUrl
+from .httpobj import HttpRequest, HttpResponse, addUrl
 
 
 responseManifest = None
@@ -18,7 +19,8 @@ def loadXMLFiles():
 	global responseManifest
 
 	responseManifest = ""
-	with open("manifest.xml", 'r') as fhan:
+
+	with open("/config/custom_components/carrier_infinity/manifest.xml", 'r') as fhan:
 		for line in fhan:
 			responseManifest = responseManifest + line
 
