@@ -3,6 +3,8 @@
   "name": "Carrier Infinity Thermostat",
   "documentation": "https://www.github.com",
   "dependencies": [],
-  "codeowners": ["@nfriess"],
-  "requirements": []
+  "codeowners": ["@nfriess",
+                 "@njobrien1006"],
+  "requirements": [],
+  "version": "v12.21.21"
 }
