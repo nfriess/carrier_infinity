@@ -5,7 +5,7 @@
 # periodically.
 #
 
-from httpobj import HttpRequest, HttpResponse, addUrl
+from .httpobj import HttpRequest, HttpResponse, addUrl
 
 
 def urlAlive(request):
