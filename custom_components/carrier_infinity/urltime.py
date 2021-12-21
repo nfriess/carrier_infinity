@@ -6,7 +6,7 @@
 
 from datetime import datetime
 
-from httpobj import HttpRequest, HttpResponse, addUrl
+from .httpobj import HttpRequest, HttpResponse, addUrl
 
 def urlTime(request):
 
