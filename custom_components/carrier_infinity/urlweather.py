@@ -9,7 +9,9 @@
 import logging
 import requests
 
-from httpobj import HttpRequest, HttpResponse, addUrl
+from .httpobj import HttpRequest, HttpResponse, addUrl
+
+_LOGGER: logging.Logger = logging.getLogger(__package__)
 
 def urlWeather(request):
 
@@ -27,7 +29,7 @@ def urlWeather(request):
     if cliResp.status_code != 200:
         return HttpResponse.errorResponse(cliResp.status_code, "Message")
 
-    logging.info(cliResp.text)
+    _LOGGER.info(cliResp.text)
 
     response = HttpResponse.okResponse()
 
