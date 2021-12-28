@@ -43,12 +43,7 @@ installation. Alternatively, download via HACS.
 Add configuration such as the following to tell Home Assistant where the HTTP server
 is running:
 
-    climate:
-      - platform: carrier_infinity
-        host: HomeAssistantIP
-        port: 5000
-    
-    climate:
+      climate:
       - platform: carrier_infinity
         host: my.spr.scrt.ip
         port: 5000
