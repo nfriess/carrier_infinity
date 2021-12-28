@@ -24,9 +24,7 @@ configuredURLs = []
 #
 def addUrl(reStr, func):
     global configuredURLs
-    #_LOGGER.debug("  URL Add {}".format(reStr))
     configuredURLs.append((re.compile(reStr), func))
-    #_LOGGER.debug(f"Dump Config'd URLs: {configuredURLs}")
 
 #
 # Filled in by the HTTP server and provided to URL handlers to contain the
