@@ -25,7 +25,7 @@ _LOGGER: logging.Logger = logging.getLogger(__package__)
 
 XMLFile = None
 res = {}
-
+httpserver_running = False
 class MyTCPHandler(socketserver.StreamRequestHandler):
 
         #def setup(self):
@@ -179,6 +179,7 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
             self._HTTPClient = self.server._HTTPClient
             #self.update_entity = self.server.update_entity
             httpRequestObj = self.parseHttpRequest()
+            
             if not httpRequestObj:
                 return
 
@@ -216,10 +217,14 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
             # accept the response.
             string = "/systems/"
             if path[:len(string)] == string:
-                time.sleep(0.1)
+                #if httpserver_running:
                 self._HTTPClient.hass.services.call("homeassistant", "update_entity", {
                     "entity_id": "climate.house_furnace_carr"
                     }, False)
+                time.sleep(0.1)
+                #else:
+                #    httpserver_running = True
+                self._HTTPClient.hass.async_create_task(self._HTTPClient.set_server_running(True))
 
             self.sendResponse(httpRequestObj, httpResponseObj)
             DICT = {}
