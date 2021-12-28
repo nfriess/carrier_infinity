@@ -131,22 +131,20 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
     failcnt = 0
     while status == None:
         time.sleep(10)
-        #await asyncio.sleep(10)
-        #status = await _HTTPClient.status()
         status = _HTTPClient.status()
         failcnt =  failcnt + 1
-        if failcnt >= 18:
+        if failcnt >= 30:
+            _LOGGER.warning(f"Setup Failed on Timeout - Config.")
             return False
             
     devcfg = None
     failcnt = 0
     while devcfg == None:
         time.sleep(10)
-        #await asyncio.sleep(10)
-        #devcfg = await _HTTPClient.config()
         devcfg = _HTTPClient.config()
         failcnt =  failcnt + 1
-        if failcnt >= 18:
+        if failcnt >= 30:
+            _LOGGER.warning(f"Setup Failed on Timeout - Status.")
             return False
 
     devices = []
