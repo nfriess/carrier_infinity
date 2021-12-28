@@ -42,6 +42,7 @@ from homeassistant.const import (
 import voluptuous as vol
 import homeassistant.helpers.config_validation as cv
 from urllib import request, parse
+import os.path
 import requests
 import asyncio
 import socket
@@ -149,7 +150,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
             return False
 
     devices = []
-    _LOGGER.debug(f"{status}")
+    _LOGGER.debug(f"Setup Status: {status}")
     # Create devices
     zones = status["zones"]["zone"]
     for i in range(len(zones)):
@@ -172,6 +173,8 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
         mode = service.data.get("mode")
         until = service.data.get("until")
         activity = service.data.get("activity")
+        pushmute = service.data.get("pushmute")
+        temp = service.data.get("temp")
 
         if entity_id:
             target_zones = [
@@ -181,8 +184,8 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
             target_zones = devices
 
         for zone in target_zones:
-            zone.set_hold_mode(mode=mode, until=until, activity=activity)
-    hass.services.register("infinitude", "set_hold_mode", service_set_hold_mode)
+            zone.set_hold_mode(mode=mode, until=until, activity=activity, pushmute=pushmute, temp=temp)
+    hass.services.register("carrier_infinity", "set_hold_mode", service_set_hold_mode)
 
     def async_shutdown(event: Event):
         """Shut down the client."""
@@ -203,43 +206,22 @@ class c_HTTPClient:
         self.timeout = 5
         self._session = None
         self.httpserver = None
-        self.energy = {}
-        self.notifications = {}
+        self.httpserver_running = False
+        self.pushovernotimute = False
+        self._energy = {}
+        self._notifications = {}
+        self._status = {}
+        self._config = {}
 
-    def api(self, path, req_data=None):
-        url = "http://{}:{}{}".format(self.host, self.port, path)
-
-        #_LOGGER.debug("=================================================================")
-        # If data is provided, encode for POSTing
-        if req_data is not None:
-            #req_data = parse.urlencode(req_data).encode("ascii")
-            _LOGGER.debug(f"URL: {url} Data: {req_data}")
-            try:
-                resp_data = requests.post(url, req_data, timeout=1)
-            except requests.exceptions.Timeout:
-                _LOGGER.error("HTTP server timed out")
-                return
-            if resp_data.status_code != requests.codes.ok:
-                _LOGGER.error("HTTP server returned %i", resp_data.status_code)
-                return
-        else:
-            _LOGGER.debug(f"URL: {url} Data: {req_data}")
-            try:
-                req = request.Request(url, req_data)
-                with request.urlopen(req) as response:
-                    resp_data = json.loads(response.read().decode())
-            except Exception as exception:  # pylint: disable=broad-except
-                _LOGGER.debug("Something really wrong happend! - %s", exception)
-                resp_data = None
-        #_LOGGER.debug(resp_data)
-        #_LOGGER.debug("//===============================================================")
-
-        return resp_data
+#===============================================================================
+#               HTTP Server
+#===============================================================================
 
     def HTTPServer(self):
         self.thread = threading.Thread(target=self.HTTPServerThread)
         self.threadrunning = True
         self.thread.start()
+        self.getRecord()
         return None
 
     def HTTPServerThread(self):
@@ -254,7 +236,54 @@ class c_HTTPClient:
 
     def HTTPServerKill(self):
         self.httpserver.shutdown()
+        _LOGGER.info("Server Kill.")
+        self.setRecord()
+        _LOGGER.info("Set Record.")
         self.threadrunning = False
+
+#===============================================================================
+#               Memory
+#===============================================================================
+
+    def getRecord(self):
+        if os.path.exists("/config/custom_components/carrier_infinity/z_record.json"):
+            with open("/config/custom_components/carrier_infinity/z_record.json", "r") as json_file:
+                inDICT = json.load(json_file)
+                self._status = inDICT["status"]
+                self._config = inDICT["config"]
+                self._energy = inDICT["energy"]
+                self._notifications = inDICT["notifications"]
+
+    def setRecord(self):
+        outputDICT = {}
+        if self._status:
+            outputDICT["status"] = self._status
+        else:
+            outputDICT["status"] = {}
+        #
+        if self._config:
+            outputDICT["config"] = self._config
+        else:
+            outputDICT["config"] = {}
+        #
+        if self._energy:
+            outputDICT["energy"] = self._energy
+        else:
+            outputDICT["energy"] = {}
+        #
+        if self._notifications:
+            outputDICT["notifications"] = self._notifications
+        else:
+            outputDICT["notifications"] = {}
+        #
+        _LOGGER.info(f"z_Record: {outputDICT}")
+        with open("/config/custom_components/carrier_infinity/z_record.json", 'w') as outfile:
+                json.dump(outputDICT, outfile, indent=4)
+        return None
+
+#===============================================================================
+#               Pushover Notifications
+#===============================================================================
 
     async def async_prep_pushover(self, ptype, data: dict = {}):
         _LOGGER.debug("My data #1 - %s", data)
@@ -264,8 +293,11 @@ class c_HTTPClient:
             myDATA = data["notifications"]
             del myDATA["@version"]
             _LOGGER.debug("My myDATA #2 - %s", myDATA)
-            self.notifications = myDATA
+            self._notifications = myDATA
             Title = "Furnace Notification"
+            if self.pushovernotimute:
+                self.pushovernotimute = False
+                return
         elif ptype == "/energy":
             myDATA = data["energy"]
             del myDATA["@version"], myDATA["seer"], myDATA["hspf"], myDATA["cooling"], myDATA["hpheat"], myDATA["eheat"]
@@ -275,7 +307,7 @@ class c_HTTPClient:
             for period in myDATA["cost"]["period"]:
                 del period["hpheat"], period["eheat"], period["reheat"], period["fangas"], period["looppump"]
             _LOGGER.debug("My myDATA #2 - %s", myDATA)
-            self.energy = myDATA
+            self._energy = myDATA
             Title = "Furnace Energy"
         else:
             return
@@ -304,30 +336,59 @@ class c_HTTPClient:
         else:
             _LOGGER.info(f"Async Pushover Failed Update!!")
 
+#===============================================================================
+#               Update Calls
+#===============================================================================
+
     def status(self):
-        status = self.api("/api/status")
-        #status = await self.hass.async_add_executor_job(self.api("/api/status"))
-        return status
+        if self.httpserver_running:
+            self._status = self.api("/api/status")
+        elif not self._status:      #If Record is blank
+            self._status = self.api("/api/status")
+        return self._status
 
     def config(self):
-        config = self.api("/api/config")
-        #config = await self.hass.async_add_executor_job(self.api("/api/config"))
-        if config == None:
-            return None
-        return config["config"]
+        if self.httpserver_running:
+            config = self.api("/api/config")
+            self._config = config["config"]
+            if config == None:
+                return None
+        elif not self._config:      #If Record is blank
+            config = self.api("/api/config")
+            self._config = config["config"]
+            if config == None:
+                return None
+        return self._config
+
+#===============================================================================
+#               Return / Set Calls
+#===============================================================================
 
     def energy(self):
-        return self.energy
+        return self._energy
 
     def notifications(self):
-        return self.notifications
+        return self._notifications
+
+    def _pushovernotimute(self, mutecmd):
+        _LOGGER.info(f"PusherOver Mute Cmd: {mutecmd}")
+        self.pushovernotimute = mutecmd
+        return
+
+    async def set_server_running(self, server_sts):
+        self.httpserver_running = server_sts
+        return
+
+#===============================================================================
+#               API Wrappers
+#===============================================================================
 
     async def api_wrapper(
         self, method: str, url: str, data: dict = {}, headers: dict = {}
         ) -> dict:
         """Get information from the API."""
         try:
-            async with async_timeout.timeout(self.timeout, loop=asyncio.get_event_loop()):
+            async with async_timeout.timeout(self.timeout):
                 if method == "get":
                     response = await self._session.get(url, headers=headers)
                     return await response.json()
@@ -365,6 +426,35 @@ class c_HTTPClient:
         except Exception as exception:  # pylint: disable=broad-except
             _LOGGER.error("Something really wrong happened! - %s", exception)
 
+    def api(self, path, req_data=None):
+        url = "http://{}:{}{}".format(self.host, self.port, path)
+
+        #_LOGGER.debug("=================================================================")
+        # If data is provided, encode for POSTing
+        if req_data is not None:
+            #req_data = parse.urlencode(req_data).encode("ascii")
+            _LOGGER.debug(f"URL: {url} Data: {req_data}")
+            try:
+                resp_data = requests.post(url, req_data, timeout=1)
+            except requests.exceptions.Timeout:
+                _LOGGER.error("HTTP server timed out")
+                return
+            if resp_data.status_code != requests.codes.ok:
+                _LOGGER.error("HTTP server returned %i", resp_data.status_code)
+                return
+        else:
+            _LOGGER.debug(f"URL: {url} Data: {req_data}")
+            try:
+                req = request.Request(url, req_data)
+                with request.urlopen(req) as response:
+                    resp_data = json.loads(response.read().decode())
+            except Exception as exception:  # pylint: disable=broad-except
+                _LOGGER.debug("Something really wrong happend! - %s", exception)
+                resp_data = None
+        #_LOGGER.debug(resp_data)
+        #_LOGGER.debug("//===============================================================")
+
+        return resp_data
 
 class _HTTPClientZone(ClimateEntity):
     def __init__(self, _HTTPClient, zone_id, zone_name_custom=None):
@@ -673,8 +763,8 @@ class _HTTPClientZone(ClimateEntity):
             "local_time": self._localtime,
             "zone_name": self.zone_name,
             "zone_id": self.zone_id,
-            "energy": self._HTTPClient.energy,
-            "notifications": self._HTTPClient.notifications,
+            "energy": self._HTTPClient._energy,
+            "notifications": self._HTTPClient._notifications,
         }
         attributes = {}
         attributes.update(default_attributes)
@@ -984,6 +1074,13 @@ class _HTTPClientZone(ClimateEntity):
         # Default: Keep None so it doesn't set it.
         if temp is None:
             temp = None
+
+        notimute = kwargs.get("pushmute")
+        if notimute is None:
+            notimute = False
+        else:
+            notimute = True
+            self._HTTPClient._pushovernotimute(notimute)
 
         if mode == HOLD_MODE_OFF:
             data = {"hold": HOLD_OFF, "holdActivity": "", "otmr": ""}
