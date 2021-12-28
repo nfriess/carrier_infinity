@@ -188,10 +188,6 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
             for (pathRe, actionFunc) in configuredURLs:
                 m = pathRe.match(httpRequestObj.path)
                 if m:
-                    #_LOGGER.info(f"Path Hit: {httpRequestObj.path}")
-                    #_LOGGER.info(f"Path Hit match: {m}")
-                    #_LOGGER.info(f"pathRe: {pathRe}")
-                    #_LOGGER.info(f"actionFunc: {actionFunc}")
                     httpRequestObj.pathGroup = m.groups()
                     httpRequestObj.pathDict = m.groupdict()
                     try:
@@ -200,10 +196,6 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
                     except Exception as exception:
                         traceback.print_exc()
                         _LOGGER.info(f"Path Hit: {httpRequestObj.path}")
-                        #_LOGGER.info(f"Path Hit match: {m}")
-                        #_LOGGER.info(f"pathRe: {pathRe}")
-                        #_LOGGER.info(f"actionFunc: {actionFunc}")
-                        #_LOGGER.info(f"body: {httpRequestObj.bodyDict}")
                         _LOGGER.debug("Something really wrong happend! - %s", exception)
                         self.sendResponse(httpRequestObj, HttpResponse.errorResponse(503, "Exception thrown"))
                         return
@@ -242,12 +234,7 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
                 self._HTTPClient.hass.async_create_task(self._HTTPClient.async_prep_pushover("/energy", DICT))
 
 class MyTCPServer(socketserver.TCPServer):
-
-    #def server_bind(self):
-    #    self.allow_reuse_address = True
-    #    super(MyTCPServer, self).server_bind()
-    
+   
     def __init__(self, host_port_tuple, streamhandler, _HTTPClient):
         super().__init__(host_port_tuple, streamhandler)
         self._HTTPClient = _HTTPClient
-        #self.update_entity = update_entity
