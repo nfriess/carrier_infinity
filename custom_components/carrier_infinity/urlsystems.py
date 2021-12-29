@@ -27,8 +27,7 @@ activeThermostatId = None
 # URL).  Also required to send updated configuration since we will use the
 # last known configuration and modify it as needed.
 configFromDevice = None
-configFromDeviceDict = {}
-systemstatus = {}
+systemstatus = None
 # Parsed status of zones
 statusZones = {}
 # Parsed configuration of zones
@@ -98,7 +97,7 @@ def findNextActivity(periods, now):
 
 def urlApiZoneSetHold(request):
     global activeThermostatId
-    global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+    global configFromDevice, systemstatus, statusZones, configZones, currentMode, tempUnits
     global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
     global INFINITY_WEEKDAY_IDS
 
@@ -211,7 +210,7 @@ addUrl("/api/hold/(?P<zoneId>.+)$", urlApiZoneSetHold)
 
 def urlApiHold(request):
     global activeThermostatId
-    global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+    global configFromDevice, systemstatus, statusZones, configZones, currentMode, tempUnits
     global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
     zoneId = request.pathDict['zoneId']
 
@@ -244,7 +243,7 @@ addUrl("/api/config/zones/zone/(?P<zoneId>.+)/$", urlApiHold)
 
 def urlApiGetZoneField(request):
     global activeThermostatId
-    global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+    global configFromDevice, systemstatus, statusZones, configZones, currentMode, tempUnits
     global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
     zoneId = request.pathDict['zoneId']
     fieldName = request.pathDict['fieldName']
@@ -263,7 +262,7 @@ addUrl("/api/status/(?P<zoneId>.+)/(?P<fieldName>.+)$", urlApiGetZoneField)
 
 def urlApiGetZoneAll(request):
     global activeThermostatId
-    global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+    global configFromDevice, systemstatus, statusZones, configZones, currentMode, tempUnits
     global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
     zoneId = request.pathDict['zoneId']
     if zoneId not in statusZones:
@@ -276,7 +275,7 @@ addUrl("/api/status/(?P<zoneId>.+)$", urlApiGetZoneAll)
 
 def urlApiGetZoneConfig(request):
     global activeThermostatId
-    global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+    global configFromDevice, systemstatus, statusZones, configZones, currentMode, tempUnits
     global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
     zoneId = request.pathDict['zoneId']
     if zoneId not in configZones:
@@ -292,7 +291,7 @@ addUrl("/api/config/(?P<zoneId>.+)$", urlApiGetZoneConfig)
 
 def urlApiDeviceConfig(request):
     global activeThermostatId
-    global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+    global configFromDevice, systemstatus, statusZones, configZones, currentMode, tempUnits
     global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
     if configFromDevice == None:
         return makeApiResponse(200, "OK", None)
@@ -300,32 +299,19 @@ def urlApiDeviceConfig(request):
         return makeApiResponse(200, "OK", ET.tostring(configFromDevice, "utf-8"), "application/xml")
 addUrl("/api/deviceConfig$", urlApiDeviceConfig)
 
-
-def urlApiConfig(request):
-    global activeThermostatId
-    global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
-    global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
-    empty = {}
-    if configFromDeviceDict == None:
-        return makeApiResponse(200, "OK", json.dumps(empty, sort_keys=True), "application/json")
-    else:
-        return makeApiResponse(200, "OK", json.dumps(configFromDeviceDict["system"], sort_keys=True), "application/json")
-addUrl("/api/config", urlApiConfig)
-
 def urlApiStatus(request):
     global activeThermostatId
-    global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+    global configFromDevice, systemstatus, statusZones, configZones, currentMode, tempUnits
     global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
-    empty = {}
     if systemstatus == None:
-        return makeApiResponse(200, "OK", json.dumps(empty,sort_keys=True), "application/json")
+        return makeApiResponse(200, "OK", None)
     else:
-        return makeApiResponse(200, "OK", json.dumps(systemstatus["status"],sort_keys=True), "application/json")
+        return makeApiResponse(200, "OK", ET.tostring(systemstatus, "utf-8"), "application/xml")
 addUrl("/api/status", urlApiStatus)
 
 def urlApiPendingActions(request):
     global activeThermostatId
-    global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+    global configFromDevice, systemstatus, statusZones, configZones, currentMode, tempUnits
     global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
     if pendingActionHold != None:
         return makeApiResponse(200, "OK", "yes", "text/plain")
@@ -601,7 +587,7 @@ def makeSystemsStatusResponse(request, serverHasChanges, configHasChanges):
 
 def urlSystemsStatus(request):
 	global activeThermostatId
-	global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+	global configFromDevice, systemstatus, statusZones, configZones, currentMode, tempUnits
 	global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
 	xmlStringData = request.bodyDict["data"][0]
 
@@ -616,7 +602,7 @@ def urlSystemsStatus(request):
 	currentMode = xmlRoot.find("./cfgtype").text
 	tempUnits = xmlRoot.find("./cfgem").text
 
-	systemstatus = xmltodict.parse(xmlStringData)
+	systemstatus = xmlRoot.find("./status")
 
 	statusZones = {}
 
@@ -798,7 +784,7 @@ def makeSystemsConfigResponse(xmlBodyStr):
 
 def urlSystemsConfig(request):
 	global activeThermostatId
-	global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+	global configFromDevice, systemstatus, statusZones, configZones, currentMode, tempUnits
 	global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
 	serialNumber = request.pathDict["serialNumber"]
 
@@ -911,7 +897,7 @@ def makeSystemsResponse():
 
 def urlsystems(request):
 	global activeThermostatId
-	global configFromDevice, configFromDeviceDict, systemstatus, statusZones, configZones, currentMode, tempUnits
+	global configFromDevice, systemstatus, statusZones, configZones, currentMode, tempUnits
 	global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
 	serialNumber = request.pathDict["serialNumber"]
 	xmlStringData = request.bodyDict["data"][0]
@@ -930,7 +916,6 @@ def urlsystems(request):
 
 	activeThermostatId = serialNumber
 	configFromDevice = xmlRoot.find("./config")
-	configFromDeviceDict = xmltodict.parse(xmlStringData)
 	
 	configZones = {}
 
