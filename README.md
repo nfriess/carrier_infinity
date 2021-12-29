@@ -45,7 +45,6 @@ is running:
 
       climate:
       - platform: carrier_infinity
-        host: my.spr.scrt.ip
         port: 5000
         pushover_user: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
         pushover_token: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
