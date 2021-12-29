@@ -413,7 +413,6 @@ class c_HTTPClient:
     def api(self, path, req_data=None):
         url = "http://{}:{}{}".format(self.local_host, self.port, path)
 
-        #_LOGGER.debug("=================================================================")
         # If data is provided, encode for POSTing
         if req_data is not None:
             #req_data = parse.urlencode(req_data).encode("ascii")
@@ -435,9 +434,6 @@ class c_HTTPClient:
             except Exception as exception:  # pylint: disable=broad-except
                 _LOGGER.debug("Something really wrong happend! - %s", exception)
                 resp_data = None
-        #_LOGGER.debug(resp_data)
-        #_LOGGER.debug("//===============================================================")
-
         return resp_data
 
 class _HTTPClientZone(ClimateEntity):
