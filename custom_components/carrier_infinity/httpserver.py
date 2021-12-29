@@ -209,32 +209,19 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
             # accept the response.
             string = "/systems/"
             if path[:len(string)] == string:
-                #if httpserver_running:
-                self._HTTPClient.hass.services.call("homeassistant", "update_entity", {
-                    "entity_id": "climate.house_furnace_carr"
-                    }, False)
                 time.sleep(0.1)
-                #else:
-                #    httpserver_running = True
-                self._HTTPClient.hass.async_create_task(self._HTTPClient.set_server_running(True))
-
-            self.sendResponse(httpRequestObj, httpResponseObj)
-            DICT = {}
-            if path[-len("/notifications"):] == "/notifications":
+                self.sendResponse(httpRequestObj, httpResponseObj)
+                serialNumber = httpRequestObj.pathDict["serialNumber"]
                 xmlStringData = httpRequestObj.bodyDict["data"][0]
-                _LOGGER.debug("XMLDump - %s", xmlStringData)
-                DICT = xmltodict.parse(xmlStringData, dict_constructor=dict)
-                _LOGGER.debug("My DICT #1 - %s", DICT)
-                self._HTTPClient.hass.async_create_task(self._HTTPClient.async_prep_pushover("/notifications", DICT))
-            elif path[-len("/energy"):] == "/energy":
-                xmlStringData = httpRequestObj.bodyDict["data"][0]
-                _LOGGER.debug("XMLDump - %s", xmlStringData)
-                DICT = xmltodict.parse(xmlStringData, dict_constructor=dict)
-                _LOGGER.debug("My DICT #1 - %s", DICT)
-                self._HTTPClient.hass.async_create_task(self._HTTPClient.async_prep_pushover("/energy", DICT))
+                #_LOGGER.debug("XMLDump - %s", xmlStringData)
+                if httpRequestObj.method == "POST":
+                    DICT = xmltodict.parse(xmlStringData, dict_constructor=dict)
+                self._HTTPClient.hass.async_create_task(self._HTTPClient._update_zones(httpRequestObj.method, httpRequestObj.path, serialNumber, DICT))
+            else:
+                self.sendResponse(httpRequestObj, httpResponseObj)
 
 class MyTCPServer(socketserver.TCPServer):
-   
+
     def __init__(self, host_port_tuple, streamhandler, _HTTPClient):
         super().__init__(host_port_tuple, streamhandler)
         self._HTTPClient = _HTTPClient
