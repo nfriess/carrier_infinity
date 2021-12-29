@@ -335,7 +335,6 @@ def urlSystemsProfile(request):
 
 	xmlBodyStr = request.bodyDict["data"][0]
 
-	#_LOGGER.debug("  SN={}".format(request.pathDict["serialNumber"]))
 	_LOGGER.info("  body={}".format(xmlBodyStr))
 
 	response = HttpResponse.okResponse()
@@ -358,7 +357,6 @@ def urlSystemsDealer(request):
 
     xmlBodyStr = request.bodyDict["data"][0]
 
-    #_LOGGER.debug("  SN={}".format(request.pathDict["serialNumber"]))
     _LOGGER.info("  body={}".format(xmlBodyStr))
 
     response = HttpResponse.okResponse()
@@ -381,7 +379,6 @@ def urlSystemsIDUConfig(request):
 
     xmlBodyStr = request.bodyDict["data"][0]
 
-    #_LOGGER.debug("  SN={}".format(request.pathDict["serialNumber"]))
     _LOGGER.info("  body={}".format(xmlBodyStr))
 
     response = HttpResponse.okResponse()
@@ -399,7 +396,6 @@ addUrl("/systems/(?P<serialNumber>.+)/idu_config$", urlSystemsIDUConfig)
 
 def urlSystemsidu_faults(request):
 
-	#_LOGGER.info("  SN={}".format(request.pathDict["serialNumber"]))
 	xmlStringData = request.bodyDict["data"][0]
 	_LOGGER.info("  idu_faults={}".format(xmlStringData))
 
@@ -411,7 +407,6 @@ def urlSystemsIDUStatus(request):
 
 	xmlBodyStr = request.bodyDict["data"][0]
 
-	#_LOGGER.debug("  SN={}".format(request.pathDict["serialNumber"]))
 	_LOGGER.info("  body={}".format(xmlBodyStr))
 
 	return makeSimpleXMLResponse()
@@ -424,7 +419,6 @@ def urlSystemsODUConfig(request):
 
     xmlBodyStr = request.bodyDict["data"][0]
 
-    #_LOGGER.debug("  SN={}".format(request.pathDict["serialNumber"]))
     _LOGGER.info("  body={}".format(xmlBodyStr))
 
     response = HttpResponse.okResponse()
@@ -442,7 +436,6 @@ addUrl("/systems/(?P<serialNumber>.+)/odu_config$", urlSystemsODUConfig)
 
 def urlSystemsodu_faults(request):
 
-	#_LOGGER.info("  SN={}".format(request.pathDict["serialNumber"]))
 	xmlStringData = request.bodyDict["data"][0]
 	_LOGGER.info("  odu_faults={}".format(xmlStringData))
 
@@ -454,7 +447,6 @@ def urlSystemsODUStatus(request):
 
 	xmlBodyStr = request.bodyDict["data"][0]
 
-	#_LOGGER.debug("  SN={}".format(request.pathDict["serialNumber"]))
 	_LOGGER.info("  body={}".format(xmlBodyStr))
 
 	return makeSimpleXMLResponse()
@@ -591,8 +583,6 @@ def urlSystemsStatus(request):
 	global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
 	xmlStringData = request.bodyDict["data"][0]
 
-	#_LOGGER.debug("  SN={}".format(request.pathDict["serialNumber"]))
-
 	xmlRoot = ET.fromstring(xmlStringData)
 
 	if xmlRoot.attrib['version'] != "1.7":
@@ -648,10 +638,6 @@ addUrl("/systems/(?P<serialNumber>.+)/status$", urlSystemsStatus)
 # I don't have utility events set up in the themostat to test this.
 def urlSystemsUtilityEvents(request):
 
-	#_LOGGER.info("  SN={}".format(request.pathDict["serialNumber"]))
-	#xmlStringData = request.bodyDict["data"][0]
-	#_LOGGER.info("  UtilEvents={}".format(xmlStringData))
-
 	utilityXMLStr = '<utility_events version="1.42" xmlns:atom="http://www.w3.org/2005/Atom"/>'
 
 	response = HttpResponse.okResponse()
@@ -671,7 +657,6 @@ addUrl("/systems/(?P<serialNumber>.+)/utility_events$", urlSystemsUtilityEvents)
 
 def urlSystemsEquipment_Events(request):
 
-	#_LOGGER.info("  SN={}".format(request.pathDict["serialNumber"]))
 	xmlStringData = request.bodyDict["data"][0]
 	_LOGGER.info("  Equipment_Events={}".format(xmlStringData))
 
@@ -680,7 +665,6 @@ addUrl("/systems/(?P<serialNumber>.+)/equipment_events$", urlSystemsEquipment_Ev
 
 def urlSystemsroot_cause(request):
 
-	#_LOGGER.info("  SN={}".format(request.pathDict["serialNumber"]))
 	xmlStringData = request.bodyDict["data"][0]
 	_LOGGER.info("  root_cause={}".format(xmlStringData))
 
@@ -689,7 +673,6 @@ addUrl("/systems/(?P<serialNumber>.+)/root_cause$", urlSystemsroot_cause)
 
 def urlSystemsequipment_events(request):
 
-	#_LOGGER.info("  SN={}".format(request.pathDict["serialNumber"]))
 	xmlStringData = request.bodyDict["data"][0]
 	_LOGGER.info("  equipment_events={}".format(xmlStringData))
 
