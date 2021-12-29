@@ -108,7 +108,6 @@ PRESET_MODES = [
 
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
-        vol.Required(CONF_HOST): cv.string,
         vol.Optional(CONF_PORT, default=5000): cv.port,
         vol.Optional("zone_names", default=[]): list,
         vol.Optional("pushover_user", default = ""): cv.string,
@@ -120,12 +119,11 @@ jsonHEADERS = {"Content-type": "application/json"}
 
 def setup_platform(hass, config, add_devices, discovery_info=None):
     """Set up the connection"""
-    host = config.get(CONF_HOST)
     port = config.get(CONF_PORT)
     pushover_user = config["pushover_user"]
     pushover_token = config["pushover_token"]
 
-    _HTTPClient = c_HTTPClient(hass, host, port, pushover_user, pushover_token)
+    _HTTPClient = c_HTTPClient(hass, port, pushover_user, pushover_token)
 
     status = _HTTPClient.HTTPServer()
     failcnt = 0
@@ -148,6 +146,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
             return False
 
     devices = []
+    _zones = []
     _LOGGER.debug(f"Setup Status: {status}")
     # Create devices
     zones = status["zones"]["zone"]
@@ -161,7 +160,9 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
                 zone_name = name_override
         # Only create if the zone is enabled
         if zones[i]["enabled"] == "on":
+            _zones.append(zone_name)
             devices.append(_HTTPClientZone(_HTTPClient, zones[i]["@id"], zone_name))
+    _HTTPClient.set_zones(_zones)
     add_devices(devices)
 
     def service_set_hold_mode(service):
@@ -193,10 +194,12 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
 
 
 class c_HTTPClient:
-    def __init__(self, hass, host, port, pushover_user, pushover_token):
+    def __init__(self, hass, port, pushover_user, pushover_token):
         self.hass = hass
-        self.host = host
+        self.host = "0.0.0.0"
+        self.local_host = "127.0.0.1"
         self.port = port
+        self._zones = []
         self.pushover_user = pushover_user
         self.pushover_token = pushover_token
         self.thread = None
@@ -206,10 +209,7 @@ class c_HTTPClient:
         self.httpserver = None
         self.httpserver_running = False
         self.pushovernotimute = False
-        self._energy = {}
-        self._notifications = {}
-        self._status = {}
-        self._config = {}
+        self.my_record = {}
 
 #===============================================================================
 #               HTTP Server
@@ -239,6 +239,34 @@ class c_HTTPClient:
         _LOGGER.info("Set Record.")
         self.threadrunning = False
 
+    async def _update_zones(self, method, path, serialNumber, data: dict = {}):
+        sys_type = path.rsplit('/', 1)[1]
+        if self.httpserver_running:
+            if method == "POST":
+                if sys_type == serialNumber:
+                    self.my_record["config"] = data["system"]["config"]
+                else:
+                    if sys_type in data:
+                        self.my_record[sys_type] = data[sys_type]
+                    else:
+                        self.my_record[sys_type] = data
+            if sys_type == "config" or sys_type == "status":
+                for zone in self._zones:
+                    _LOGGER.info(f"Zone Update: {zone} Path: {path}")
+                    await self.hass.services.async_call("homeassistant", "update_entity", {
+                        "entity_id": f"climate.{zone.lower()}"
+                        }, False)
+            elif sys_type == "notifications" or sys_type == "energy":
+                await self.async_prep_pushover(sys_type)
+        else:
+            _LOGGER.info(f"sys_type: {sys_type} serialNumber: {serialNumber}")
+            if sys_type == serialNumber:
+                self.my_record["config"] = data["system"]["config"]
+                self.httpserver_running = True
+
+    def set_zones(self, zones):
+        _LOGGER.info(f"Set Zones: {zones}")
+        self._zones = zones
 #===============================================================================
 #               Memory
 #===============================================================================
@@ -246,58 +274,27 @@ class c_HTTPClient:
     def getRecord(self):
         if os.path.exists("/config/custom_components/carrier_infinity/z_record.json"):
             with open("/config/custom_components/carrier_infinity/z_record.json", "r") as json_file:
-                inDICT = json.load(json_file)
-                self._status = inDICT["status"]
-                self._config = inDICT["config"]
-                self._energy = inDICT["energy"]
-                self._notifications = inDICT["notifications"]
+                self.my_record = json.load(json_file)
 
     def setRecord(self):
-        outputDICT = {}
-        if self._status:
-            outputDICT["status"] = self._status
-        else:
-            outputDICT["status"] = {}
-        #
-        if self._config:
-            outputDICT["config"] = self._config
-        else:
-            outputDICT["config"] = {}
-        #
-        if self._energy:
-            outputDICT["energy"] = self._energy
-        else:
-            outputDICT["energy"] = {}
-        #
-        if self._notifications:
-            outputDICT["notifications"] = self._notifications
-        else:
-            outputDICT["notifications"] = {}
-        #
-        _LOGGER.info(f"z_Record: {outputDICT}")
         with open("/config/custom_components/carrier_infinity/z_record.json", 'w') as outfile:
-                json.dump(outputDICT, outfile, indent=4)
-        return None
+                json.dump(self.my_record, outfile, indent=4)
 
 #===============================================================================
 #               Pushover Notifications
 #===============================================================================
 
-    async def async_prep_pushover(self, ptype, data: dict = {}):
-        _LOGGER.debug("My data #1 - %s", data)
-        _LOGGER.debug("My ptype - %s", ptype)
-        myDATA = data
-        if ptype == "/notifications":
-            myDATA = data["notifications"]
+    async def async_prep_pushover(self, ptype):
+        if ptype == "notifications":
+            myDATA = self.my_record[ptype]
             del myDATA["@version"]
             _LOGGER.debug("My myDATA #2 - %s", myDATA)
-            self._notifications = myDATA
             Title = "Furnace Notification"
             if self.pushovernotimute:
                 self.pushovernotimute = False
                 return
-        elif ptype == "/energy":
-            myDATA = data["energy"]
+        elif ptype == "energy":
+            myDATA = self.my_record[ptype]
             del myDATA["@version"], myDATA["seer"], myDATA["hspf"], myDATA["cooling"], myDATA["hpheat"], myDATA["eheat"]
             del myDATA["gas"], myDATA["reheat"], myDATA["fangas"], myDATA["fan"], myDATA["looppump"]
             for period in myDATA["usage"]["period"]:
@@ -305,7 +302,6 @@ class c_HTTPClient:
             for period in myDATA["cost"]["period"]:
                 del period["hpheat"], period["eheat"], period["reheat"], period["fangas"], period["looppump"]
             _LOGGER.debug("My myDATA #2 - %s", myDATA)
-            self._energy = myDATA
             Title = "Furnace Energy"
         else:
             return
@@ -339,42 +335,32 @@ class c_HTTPClient:
 #===============================================================================
 
     def status(self):
-        if self.httpserver_running:
-            self._status = self.api("/api/status")
-        elif not self._status:      #If Record is blank
-            self._status = self.api("/api/status")
-        return self._status
+        key = "status"
+        if key in self.my_record:
+            return self.my_record[key]
+        else:
+            return None
 
     def config(self):
-        if self.httpserver_running:
-            config = self.api("/api/config")
-            self._config = config["config"]
-            if config == None:
-                return None
-        elif not self._config:      #If Record is blank
-            config = self.api("/api/config")
-            self._config = config["config"]
-            if config == None:
-                return None
-        return self._config
+        key = "config"
+        if key in self.my_record:
+            return self.my_record[key]
+        else:
+            return None
 
 #===============================================================================
 #               Return / Set Calls
 #===============================================================================
 
-    def energy(self):
-        return self._energy
-
-    def notifications(self):
-        return self._notifications
+    def rtn_record(self, key):
+        if key in self.my_record:
+            return self.my_record[key]
+        else:
+            return None
 
     def _pushovernotimute(self, mutecmd):
         _LOGGER.info(f"PusherOver Mute Cmd: {mutecmd}")
         self.pushovernotimute = mutecmd
-        return
-
-    async def set_server_running(self, server_sts):
-        self.httpserver_running = server_sts
         return
 
 #===============================================================================
@@ -425,7 +411,7 @@ class c_HTTPClient:
             _LOGGER.error("Something really wrong happened! - %s", exception)
 
     def api(self, path, req_data=None):
-        url = "http://{}:{}{}".format(self.host, self.port, path)
+        url = "http://{}:{}{}".format(self.local_host, self.port, path)
 
         #_LOGGER.debug("=================================================================")
         # If data is provided, encode for POSTing
@@ -669,7 +655,7 @@ class _HTTPClientZone(ClimateEntity):
                 period_datetime = datetime.datetime(
                     dt.year, dt.month, dt.day, int(period_hh), int(period_mm)
                 )
-                _LOGGER.info(f"DT={dt.year}-{dt.month}-{dt.day}={int(period_hh)}:{int(period_mm)}")
+                #_LOGGER.info(f"DT={dt.year}-{dt.month}-{dt.day}={int(period_hh)}:{int(period_mm)}")
                 if period_datetime < dt:
                     self.activity_scheduled = get_safe(period, "activity")
                     self.activity_scheduled_start = period_datetime
@@ -677,7 +663,7 @@ class _HTTPClientZone(ClimateEntity):
                     self.activity_next = get_safe(period, "activity")
                     self.activity_next_start = period_datetime
                     break
-                _LOGGER.info(f"ACT={period}")
+                #_LOGGER.info(f"ACT={period}")
             if self.activity_next is None:
                 dt = datetime.datetime(
                     year=dt.year, month=dt.month, day=dt.day
@@ -761,8 +747,8 @@ class _HTTPClientZone(ClimateEntity):
             "local_time": self._localtime,
             "zone_name": self.zone_name,
             "zone_id": self.zone_id,
-            "energy": self._HTTPClient._energy,
-            "notifications": self._HTTPClient._notifications,
+            "energy": self._HTTPClient.rtn_record("energy"),
+            "notifications": self._HTTPClient.rtn_record("notifications"),
         }
         attributes = {}
         attributes.update(default_attributes)
