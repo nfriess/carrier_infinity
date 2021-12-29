@@ -213,7 +213,6 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
                 self.sendResponse(httpRequestObj, httpResponseObj)
                 serialNumber = httpRequestObj.pathDict["serialNumber"]
                 xmlStringData = httpRequestObj.bodyDict["data"][0]
-                #_LOGGER.debug("XMLDump - %s", xmlStringData)
                 if httpRequestObj.method == "POST":
                     DICT = xmltodict.parse(xmlStringData, dict_constructor=dict)
                 self._HTTPClient.hass.async_create_task(self._HTTPClient._update_zones(httpRequestObj.method, httpRequestObj.path, serialNumber, DICT))
