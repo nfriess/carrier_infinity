@@ -942,15 +942,15 @@ class _HTTPClientZone(ClimateEntity):
         """Set new target fan mode.
         When set to 'auto', map to Infinity's internal value of 'off'
         """
-        raise NotImplementedError
+        _LOGGER.info("Carrier Infinity set fan")
 
     def set_hvac_mode(self, hvac_mode):
         """Set new target hvac mode."""
-        raise NotImplementedError
+        _LOGGER.info("Carrier Infinity set hvac")
 
     def set_swing_mode(self, swing_mode):
         """Set new target swing operation."""
-        raise NotImplementedError
+        _LOGGER.info("Carrier Infinity set swing")
 
     def set_preset_mode(self, preset_mode):
         """Set new preset mode."""
