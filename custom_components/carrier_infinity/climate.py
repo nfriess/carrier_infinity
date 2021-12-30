@@ -106,12 +106,38 @@ PRESET_MODES = [
     PRESET_MANUAL_PERM,
 ]
 
+Notify_SCHEMA = vol.Schema(
+    {
+        vol.Required("entity_id"): cv.string,
+        vol.Required("title"): cv.string,
+        vol.Optional("message", default = ""): cv.string,
+        vol.Optional("target", default = ""): cv.string,
+        vol.Optional("data"): {
+            vol.Optional("url", default = ""): cv.string,
+            vol.Optional("sound", default = ""): cv.string,
+            vol.Optional("priority", default = "0"): cv.string,
+            vol.Optional("attachment", default = ""): cv.string,
+        },
+        vol.Optional("delete", default=[]): list,
+        vol.Optional("delete_sub", default=dict): {
+            str: vol.Any(
+                None,
+            )
+        },
+        vol.Optional("muteable", default = "False"): cv.string
+    }
+)
+
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Optional(CONF_PORT, default=5000): cv.port,
         vol.Optional("zone_names", default=[]): list,
-        vol.Optional("pushover_user", default = ""): cv.string,
-        vol.Optional("pushover_token", default = ""): cv.string,
+        vol.Optional("notify", default=dict): {
+            str: vol.Any(
+                None,
+                Notify_SCHEMA,
+            )
+        },
     }
 )
 
@@ -120,10 +146,17 @@ jsonHEADERS = {"Content-type": "application/json"}
 def setup_platform(hass, config, add_devices, discovery_info=None):
     """Set up the connection"""
     port = config.get(CONF_PORT)
-    pushover_user = config["pushover_user"]
-    pushover_token = config["pushover_token"]
+    notify = {}
+    notifyjson = {}
+    if "notify" in config:
+        notify = config["notify"]
+        notifydumps = json.dumps(notify)
+        notifyjson = json.loads(notifydumps)
+    else:
+        notifyjson = None
+    _LOGGER.debug(f"NotifyJ: {notifyjson}")
 
-    _HTTPClient = c_HTTPClient(hass, port, pushover_user, pushover_token)
+    _HTTPClient = c_HTTPClient(hass, port, notifyjson)
 
     status = _HTTPClient.HTTPServer()
     failcnt = 0
@@ -194,14 +227,13 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
 
 
 class c_HTTPClient:
-    def __init__(self, hass, port, pushover_user, pushover_token):
+    def __init__(self, hass, port, notify: dict = {}):
         self.hass = hass
         self.host = "0.0.0.0"
         self.local_host = "127.0.0.1"
         self.port = port
         self._zones = []
-        self.pushover_user = pushover_user
-        self.pushover_token = pushover_token
+        self.notify = notify
         self.thread = None
         self.threadrunning = None
         self.timeout = 5
@@ -256,14 +288,14 @@ class c_HTTPClient:
                     await self.hass.services.async_call("homeassistant", "update_entity", {
                         "entity_id": f"climate.{zone.lower()}"
                         }, False)
-            elif sys_type == "notifications" or sys_type == "energy":
-                await self.async_prep_pushover(sys_type)
+            elif sys_type in self.notify:
+                await self.async_notify(sys_type, self.notify[sys_type])
         else:
             _LOGGER.info(f"sys_type: {sys_type} serialNumber: {serialNumber}")
             if sys_type == serialNumber:
                 self.my_record["config"] = data["system"]["config"]
                 self.httpserver_running = True
-
+    
     def set_zones(self, zones):
         _LOGGER.info(f"Set Zones: {zones}")
         self._zones = zones
@@ -281,54 +313,36 @@ class c_HTTPClient:
                 json.dump(self.my_record, outfile, indent=4)
 
 #===============================================================================
-#               Pushover Notifications
+#               Notifications
 #===============================================================================
 
-    async def async_prep_pushover(self, ptype):
-        if ptype == "notifications":
-            myDATA = self.my_record[ptype]
-            del myDATA["@version"]
-            _LOGGER.debug("My myDATA #2 - %s", myDATA)
-            Title = "Furnace Notification"
+    async def async_notify(self, ptype, notify: dict = {}):
+        myDATA = self.my_record[ptype]
+        for delete in notify["delete"]:
+            del myDATA[delete]
+        if notify["muteable"]:
             if self.pushovernotimute:
                 self.pushovernotimute = False
                 return
-        elif ptype == "energy":
-            myDATA = self.my_record[ptype]
-            del myDATA["@version"], myDATA["seer"], myDATA["hspf"], myDATA["cooling"], myDATA["hpheat"], myDATA["eheat"]
-            del myDATA["gas"], myDATA["reheat"], myDATA["fangas"], myDATA["fan"], myDATA["looppump"]
+        if ptype == "energy":
             for period in myDATA["usage"]["period"]:
                 del period["hpheat"], period["eheat"], period["reheat"], period["fangas"], period["looppump"]
             for period in myDATA["cost"]["period"]:
                 del period["hpheat"], period["eheat"], period["reheat"], period["fangas"], period["looppump"]
-            _LOGGER.debug("My myDATA #2 - %s", myDATA)
-            Title = "Furnace Energy"
-        else:
-            return
 
         Message = yaml.safe_dump(myDATA, default_flow_style=False, allow_unicode=True)
-        _LOGGER.debug("My attempted message - %s", Message)
-        await self.async_send_pushover(Title, Message, 0)
-
-    async def async_send_pushover(self, title="Carrier_Infinity Alert", message="MyMessage", priority=0):
-        if self._session == None:
-            self._session = async_get_clientsession(self.hass)
-        if self.pushover_user == "" or self.pushover_token == "":
-            return 
-        url = "https://api.pushover.net/1/messages.json"
-        response = await self.api_wrapper("post", url, 
-            data = {
-            "token": self.pushover_token,
-            "user": self.pushover_user,
-            "message": message,
-            "title": title,
-            "priority": priority
-            },
-            headers=jsonHEADERS)
-        if response != None:
-            _LOGGER.debug(f"Async Pushover Success?: {response}")
-        else:
-            _LOGGER.info(f"Async Pushover Failed Update!!")
+        mynotidata = notify["data"]
+        await self.hass.services.async_call("notify", notify["entity_id"], {
+                "message": notify['message'] + "\n" + "\n" + Message,
+                "title": notify["title"],
+                "target": notify["target"],
+                "data": {
+                    "url": mynotidata["url"],
+                    "sound": mynotidata["sound"],
+                    "priority": mynotidata["priority"],
+                    "attachment": mynotidata["attachment"],
+                },
+            }, False)
 
 #===============================================================================
 #               Update Calls
@@ -366,49 +380,6 @@ class c_HTTPClient:
 #===============================================================================
 #               API Wrappers
 #===============================================================================
-
-    async def api_wrapper(
-        self, method: str, url: str, data: dict = {}, headers: dict = {}
-        ) -> dict:
-        """Get information from the API."""
-        try:
-            async with async_timeout.timeout(self.timeout):
-                if method == "get":
-                    response = await self._session.get(url, headers=headers)
-                    return await response.json()
-
-                elif method == "put":
-                    await self._session.put(url, headers=headers, json=data)
-
-                elif method == "patch":
-                    await self._session.patch(url, headers=headers, json=data)
-
-                elif method == "post":
-                    _LOGGER.debug(f"headers: {headers} data: {data}")
-                    response = await self._session.post(url, headers=headers, json=data)
-                    return await response.json()
-
-        except asyncio.TimeoutError as exception:
-            _LOGGER.error(
-                "Timeout error fetching information from %s - %s",
-                url,
-                exception,
-            )
-
-        except (KeyError, TypeError) as exception:
-            _LOGGER.error(
-                "Error parsing information from %s - %s",
-                url,
-                exception,
-            )
-        except (aiohttp.ClientError, socket.gaierror) as exception:
-            _LOGGER.error(
-                "Error fetching information from %s - %s",
-                url,
-                exception,
-            )
-        except Exception as exception:  # pylint: disable=broad-except
-            _LOGGER.error("Something really wrong happened! - %s", exception)
 
     def api(self, path, req_data=None):
         url = "http://{}:{}{}".format(self.local_host, self.port, path)
@@ -942,7 +913,7 @@ class _HTTPClientZone(ClimateEntity):
         """Set new target fan mode.
         When set to 'auto', map to Infinity's internal value of 'off'
         """
-        _LOGGER.info("Carrier Infinity set fan")
+        raise NotImplementedError
 
     def set_hvac_mode(self, hvac_mode):
         """Set new target hvac mode."""
@@ -950,7 +921,7 @@ class _HTTPClientZone(ClimateEntity):
 
     def set_swing_mode(self, swing_mode):
         """Set new target swing operation."""
-        _LOGGER.info("Carrier Infinity set swing")
+        raise NotImplementedError
 
     def set_preset_mode(self, preset_mode):
         """Set new preset mode."""
