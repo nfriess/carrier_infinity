@@ -93,12 +93,9 @@ its current configuration to the HTTP server.
 On restart of HomeAssistant the integration hangs and will await the thermostat 
 to post before completing the startup.
 
-# Pushover
+# Notify
 
-I use Pushover to send notifications. Other API options could easily be adapted.
-Currently the Pushover is sending furnace notifications (similar to emails from 
-Carrier/Bryant) and energy statistics. HTTPServer.py-Handle can easily be modified
-for other messages to be sent to an API.
+Notify has been imbedded to send alerts on configured messages.
 
 # Design
 
