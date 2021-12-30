@@ -40,17 +40,49 @@ Copy the custom_components/carrier_infinity/ directory under homeassistant/
 here into the config/custom_components/ directory of your Home Assistant 
 installation. Alternatively, download via HACS.
 
-Add configuration such as the following to tell Home Assistant where the HTTP server
-is running:
+Add configuration such as the following to tell Home Assistant your desired port
+and notifcations settings.
 
       climate:
       - platform: carrier_infinity
         port: 5000
-        pushover_user: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-        pushover_token: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
         zone_names:
           - House_Furnace_Carr
-        scan_interval: 300
+        notify:
+          energy:           #Matches the value in the server POST...See z_record.json
+            entity_id: pushovern  #notify.XYZ
+            title: Furnace Energy Report
+            message: Appended Report
+            data:
+              priority: 0
+              url: "https://www.home-assistant.io/"
+              #sound: pianobar
+              #attachment: "http://example.com/image.png"
+            delete:         #Deletes these DICT values before converting to YAML and sending.
+              - "@version"
+              - seer
+              - hspf
+              - cooling
+              - hpheat
+              - eheat
+              - gas
+              - reheat
+              - fangas
+              - fan
+             - looppump
+          notifications:    #Matches the value in the server POST...See z_record.json
+            entity_id: pushovern  #notify.XYZ
+            title: Furnace Notification
+            #message: MyApped Message
+            data:
+              priority: 0
+              url: "https://www.home-assistant.io/"
+              #sound: pianobar
+              #attachment: "http://example.com/image.png"
+            delete:         #Deletes this DICT values before converting to YAML and sending.
+              - "@version"
+            muteable: True
+    scan_interval: 300
 
 Restart Home Assistant and the thermostat will appear.  Initially Home Assistant
 may not show real data from the actual thermostat.  The thermostat must check in
