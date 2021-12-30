@@ -90,8 +90,8 @@ with the HTTP server before any status information can be determined.  Likewise,
 temperature and other settings cannot be adjusted until the thermostat has sent
 its current configuration to the HTTP server.
 
-On restart of HomeAssistant the integration hangs and will await the thermostat 
-to post before completing the startup.
+On subsequent restarts, the previous values will have been recorded reducing the 
+boot time.
 
 # Notify
 
