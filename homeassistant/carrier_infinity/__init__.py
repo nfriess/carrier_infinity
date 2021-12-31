@@ -1,1 +1,0 @@
-"""Carrier Infinity Thermostat"""

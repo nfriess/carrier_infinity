@@ -1,0 +1,22 @@
+set_hold_mode:
+  description: Sets hold mode.
+  fields:
+    entry_id:
+      description: Entity ID
+      example: "climate.house_furnace_carr"
+    mode:
+      description: The hold mode (per schedule/hold/hold until)..Optional..Default Hold Until
+      example: "per schedule"
+    until:
+      description: When the hold should end, in 15 minute increments..Optional..Default Next Act Start
+      example: "17:15"
+    activity:
+      description: The carrier activity name (home/away/sleep/wake/manual)..Default Current Activity
+      example: "away"
+    temperature:
+      description: The target temperature for manual mode..Optional..Need to set Activity = manual
+      example: "20.5"
+    pushmute:
+      description: Mute next furnace notification..Optional
+      example: "True"
+

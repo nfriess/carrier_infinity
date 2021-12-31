@@ -1,29 +1,32 @@
 # Carrier Infinity Thermostat Controller
 
+Also compatible with Bryant and likely ICP Brands Ion (including Airquest, Arcoaire, 
+Comfortmaker, Day&Night, Heil, Keeprite, Tempstar).
+
 This repository contains an HTTP server that can be used to replace the official
 Carrier web service that Carrier Infinity thermostats communicate with.  The
 idea is to provide a complete replacement for the HTTP server that Carrier runs,
 allowing full remote control of the thermostat using open source applications like
 [Home Assistant](https://www.home-assistant.io/).
 
-Currently the weather data is still obtained from Carrier's server.
+Currently the weather data is still obtained from Carrier's server. Everything else
+is local only. This integration breaks Carrier APP and goes all local (except weather).
 
 # Components
 
-The HTTP server that communicates with the thermostat is in the infinity_proxy/
-directory.  A custom component for Home Assistant that will communicate with the
-HTTP server is in homeassistant/.
+The HTTPServer and HTTPClient have been merged into a single application. Utilizing a 
+thread for the server and HomeAssistant Sync for the Client.
 
 # How to Use
 
 ## HTTP Server
 
-Start the HTTP server in infinity_proxy/http_server.py.  It will listen on port
-5000.  In the thermostatic configuration, go to Wifi and Advanced Settings.
-Turn on the proxy setting, enter the IP address of the system running
-http_server.py and port 5000.
+The HTTP serer is now integrated into HomeAssistant Add-On. It will listen on 
+port the configured port (default=5000).  In the thermostatic configuration, 
+go to Wifi and Advanced Settings. Turn on the proxy setting, enter the IP address 
+of the HomeAssitant and configured port.
 
-Note that it will take a while for the thermostat to connect to http_server.py
+Note that it will take a while for the thermostat to connect
 and completely refresh itself.  In the meanwhile the wifi status may show the
 warning symbol acting as though there are connection problems.  After a hour
 or more it will eventually settle down and the warning symbol will disappear.
@@ -33,21 +36,66 @@ must succeed (sometimes more than once) before the warning symbol disappears.
 
 ## Home Assistant Control
 
-Copy the carrier_infinity/ directory under homeassistant/ here into the
-config/custom_components/ directory of your Home Assistant installation. Add
-configuration such as the following to tell Home Assistant where the HTTP server
-is running:
+Copy the custom_components/carrier_infinity/ directory under homeassistant/ 
+here into the config/custom_components/ directory of your Home Assistant 
+installation. Alternatively, download via HACS.
 
-    climate:
+Add configuration such as the following to tell Home Assistant your desired port
+and notifcations settings.
+
+      climate:
       - platform: carrier_infinity
-        host: infinity.internal.cus
         port: 5000
+        zone_names:
+          - House_Furnace_Carr
+        notify:
+          energy:           #Matches the value in the server POST...See z_record.json
+            entity_id: pushovern  #notify.XYZ
+            title: Furnace Energy Report
+            message: Appended Report
+            data:
+              priority: 0
+              url: "https://www.home-assistant.io/"
+              #sound: pianobar
+              #attachment: "http://example.com/image.png"
+            delete:         #Deletes these DICT values before converting to YAML and sending.
+              - "@version"
+              - seer
+              - hspf
+              - cooling
+              - hpheat
+              - eheat
+              - gas
+              - reheat
+              - fangas
+              - fan
+             - looppump
+          notifications:    #Matches the value in the server POST...See z_record.json
+            entity_id: pushovern  #notify.XYZ
+            title: Furnace Notification
+            #message: MyApped Message
+            data:
+              priority: 0
+              url: "https://www.home-assistant.io/"
+              #sound: pianobar
+              #attachment: "http://example.com/image.png"
+            delete:         #Deletes this DICT values before converting to YAML and sending.
+              - "@version"
+            muteable: True
+    scan_interval: 300
 
 Restart Home Assistant and the thermostat will appear.  Initially Home Assistant
 may not show real data from the actual thermostat.  The thermostat must check in
 with the HTTP server before any status information can be determined.  Likewise,
 temperature and other settings cannot be adjusted until the thermostat has sent
 its current configuration to the HTTP server.
+
+On subsequent restarts, the previous values will have been recorded reducing the 
+boot time.
+
+# Notify
+
+Notify has been imbedded to send alerts on configured messages.
 
 # Design
 
@@ -77,4 +125,5 @@ Carrier.  The other motivation is to try to make the HTTP server more maintainab
 than the Perl code in that project.
 
 The other project that formed a basis for the Home Assistant plugin is
-https://github.com/MizterB/homeassistant-infinitude
+https://github.com/MizterB/homeassistant-infinitude from which the HomeAssistant 
+Climate.py was based on.

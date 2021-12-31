@@ -6,6 +6,9 @@
 from datetime import datetime
 import re
 from urllib.parse import parse_qs
+import logging
+
+_LOGGER: logging.Logger = logging.getLogger(__package__)
 
 # This is populated by the URL handlers to define the mapping between a path
 # and the function that should be called.  This is an ordered list because

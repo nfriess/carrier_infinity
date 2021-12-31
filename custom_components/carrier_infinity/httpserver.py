@@ -8,23 +8,32 @@ import os
 import socketserver
 import time
 import traceback
+import re
+import json
+import xmltodict
 
-from httpobj import HttpRequest, HttpResponse, configuredURLs
-import urlalive
-import urlsystems
-import urlweather
-import urltime
-import urlmanifest
-import urlapi
-import urlrelnodes
+from .httpobj import HttpRequest, HttpResponse, configuredURLs
+from .urlalive import *
+from .urlsystems import *
+from .urlweather import *
+from .urltime import *
+from .urlmanifest import *
+#from .urlapi import *
+from .urlrelnodes import *
 
+_LOGGER: logging.Logger = logging.getLogger(__package__)
 
-
+XMLFile = None
+res = {}
+httpserver_running = False
 class MyTCPHandler(socketserver.StreamRequestHandler):
 
         #def setup(self):
         #    self.timeout = 5
         #    super(socketserver.StreamRequestHandler, self).setup()
+
+        #def __init__(self, hass):
+        #    self.hass = hass
 
         # Based on experimentation it appears that if a response header crosses
         # a TCP packet boundary the thermostat isn't able to parse the response
@@ -39,7 +48,7 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
 
         # Convenience method to send error responses.
         def errorResponse(self, errCode, errMessage):
-            logging.warning("  Respond {}".format(errCode))
+            _LOGGER.warning("  Respond {}".format(errCode))
             self.writeLine("{} {} {}".format(HttpRequest.VERSION_1_1, errCode, errMessage))
             self.writeLine("Content-Length: 0")
             self.writeLine("Connection: close")
@@ -101,7 +110,7 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
 
                     if not bytesRead:
                         if timeLeft == 0:
-                            logging.warning("  Timeout witing for body, need {} more bytes".format(numLeft))
+                            _LOGGER.warning("  Timeout witing for body, need {} more bytes".format(numLeft))
                             self.sendResponse(httpRequestObj, HttpResponse.errorResponse(400, "Bad Request"))
                             return None
 
@@ -113,7 +122,7 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
                     numLeft = numLeft - len(bytesRead)
 
                 if not bytesRead and numLeft > 0:
-                    logging.warning("  Need {} more bytes from body".format(numLeft))
+                    _LOGGER.warning("  Need {} more bytes from body".format(numLeft))
                     self.sendResponse(httpRequestObj, HttpResponse.errorResponse(400, "Bad Request"))
                     return None
 
@@ -133,7 +142,14 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
                     logBodyStr = str(len(httpResponseObj.body)) + " bytes"
 
             # A basic access log
-            logging.info("Request from {}:{} {} {} {} {}".format(self.client_address[0], self.client_address[1], httpRequestObj.method, httpRequestObj.path, httpResponseObj.code, logBodyStr))
+            if httpResponseObj.code == 404:
+                _LOGGER.info("Request from {}:{} {} {} {} {}".format(self.client_address[0], self.client_address[1], httpRequestObj.method, httpRequestObj.path, httpResponseObj.code, logBodyStr))
+                _LOGGER.info(f"FullBody Request: {httpRequestObj.body}")
+            elif httpResponseObj.code == 503:
+                _LOGGER.info("Request from {}:{} {} {} {} {}".format(self.client_address[0], self.client_address[1], httpRequestObj.method, httpRequestObj.path, httpResponseObj.code, logBodyStr))
+                _LOGGER.info(f"FullBody Request: {httpRequestObj.body}")
+            else:
+                _LOGGER.debug("Request from {}:{} {} {} {} {}".format(self.client_address[0], self.client_address[1], httpRequestObj.method, httpRequestObj.path, httpResponseObj.code, logBodyStr))
 
             self.writeLine("{} {} {}".format(HttpRequest.VERSION_1_1, httpResponseObj.code, httpResponseObj.message))
 
@@ -160,8 +176,10 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
 
 
         def handle(self):
-
+            self._HTTPClient = self.server._HTTPClient
+            #self.update_entity = self.server.update_entity
             httpRequestObj = self.parseHttpRequest()
+            
             if not httpRequestObj:
                 return
 
@@ -173,9 +191,12 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
                     httpRequestObj.pathGroup = m.groups()
                     httpRequestObj.pathDict = m.groupdict()
                     try:
+                        path = httpRequestObj.path
                         httpResponseObj = actionFunc(httpRequestObj)
-                    except:
+                    except Exception as exception:
                         traceback.print_exc()
+                        _LOGGER.info(f"Path Hit: {httpRequestObj.path}")
+                        _LOGGER.debug("Something really wrong happend! - %s", exception)
                         self.sendResponse(httpRequestObj, HttpResponse.errorResponse(503, "Exception thrown"))
                         return
                     break
@@ -186,27 +207,20 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
 
             # Simulate delay from Internet 100ms, seems to help the theromostat
             # accept the response.
-            time.sleep(0.1)
-
-            self.sendResponse(httpRequestObj, httpResponseObj)
-
-
+            string = "/systems/"
+            if path[:len(string)] == string:
+                time.sleep(0.1)
+                self.sendResponse(httpRequestObj, httpResponseObj)
+                serialNumber = httpRequestObj.pathDict["serialNumber"]
+                xmlStringData = httpRequestObj.bodyDict["data"][0]
+                if httpRequestObj.method == "POST":
+                    DICT = xmltodict.parse(xmlStringData, dict_constructor=dict)
+                self._HTTPClient.hass.async_create_task(self._HTTPClient._update_zones(httpRequestObj.method, httpRequestObj.path, serialNumber, DICT))
+            else:
+                self.sendResponse(httpRequestObj, httpResponseObj)
 
 class MyTCPServer(socketserver.TCPServer):
 
-    def server_bind(self):
-        self.allow_reuse_address = True
-        super(MyTCPServer, self).server_bind()
-
-
-if __name__ == "__main__":
-  HOST, PORT = "0.0.0.0", 5000
-
-  logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', level=logging.INFO)
-
-  with MyTCPServer((HOST, PORT), MyTCPHandler) as server:
-    try:
-        logging.info("Listen on port {}".format(PORT))
-        server.serve_forever()
-    except:
-        server.server_close()
+    def __init__(self, host_port_tuple, streamhandler, _HTTPClient):
+        super().__init__(host_port_tuple, streamhandler)
+        self._HTTPClient = _HTTPClient
