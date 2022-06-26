@@ -4,5 +4,6 @@
   "documentation": "https://www.github.com",
   "dependencies": [],
   "codeowners": ["@nfriess"],
-  "requirements": []
+  "requirements": [],
+  "version": "1.1.0"
 }

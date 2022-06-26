@@ -3,7 +3,7 @@ import logging
 import requests
 import voluptuous as vol
 
-from homeassistant.components.climate import ClimateDevice,PLATFORM_SCHEMA
+from homeassistant.components.climate import ClimateEntity,PLATFORM_SCHEMA
 from homeassistant.components.climate.const import (
     HVAC_MODE_OFF, HVAC_MODE_HEAT, HVAC_MODE_COOL, HVAC_MODE_HEAT_COOL, HVAC_MODE_FAN_ONLY,
     FAN_AUTO, FAN_LOW, FAN_MEDIUM, FAN_HIGH,
@@ -38,7 +38,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend({
 _LOGGER = logging.getLogger(__name__)
 
 
-class CarrierInfinity(ClimateDevice):
+class CarrierInfinity(ClimateEntity):
 
     def __init__(self, host, port, zone):
         _LOGGER.debug("Create Carrier Infinity using HTTP server %s:%i, zone %i", host, port, zone)
