@@ -1,6 +1,6 @@
 # Carrier Infinity Thermostat Controller
 
-Also compatible with Bryant and likely ICP Brands Ion (including Airquest, Arcoaire, 
+Also compatible with Bryant and likely ICP Brands Ion (including Airquest, Arcoaire,
 Comfortmaker, Day&Night, Heil, Keeprite, Tempstar).
 
 This repository contains an HTTP server that can be used to replace the official
@@ -12,19 +12,14 @@ allowing full remote control of the thermostat using open source applications li
 Currently the weather data is still obtained from Carrier's server. Everything else
 is local only. This integration breaks Carrier APP and goes all local (except weather).
 
-# Components
-
-The HTTPServer and HTTPClient have been merged into a single application. Utilizing a 
-thread for the server and HomeAssistant Sync for the Client.
-
 # How to Use
 
 ## HTTP Server
 
-The HTTP serer is now integrated into HomeAssistant Add-On. It will listen on 
-port the configured port (default=5000).  In the thermostatic configuration, 
-go to Wifi and Advanced Settings. Turn on the proxy setting, enter the IP address 
-of the HomeAssitant and configured port.
+A dedicated HTTP serer is integrated into Home Assistant for the thermostat to
+communicate with. It will listen on port the configured port (default=5000).
+In the thermostat configuration, go to Wifi and Advanced Settings. Turn on the
+proxy setting, enter the IP address of the Home Assistant and configured port.
 
 Note that it will take a while for the thermostat to connect
 and completely refresh itself.  In the meanwhile the wifi status may show the
@@ -36,9 +31,8 @@ must succeed (sometimes more than once) before the warning symbol disappears.
 
 ## Home Assistant Control
 
-Copy the custom_components/carrier_infinity/ directory under homeassistant/ 
-here into the config/custom_components/ directory of your Home Assistant 
-installation. Alternatively, download via HACS.
+Copy the custom_components/carrier_infinity/ directory into the
+config/custom_components/ directory of your Home Assistant installation.
 
 Add configuration such as the following to tell Home Assistant your desired port
 and notifcations settings.
@@ -47,10 +41,10 @@ and notifcations settings.
       - platform: carrier_infinity
         port: 5000
         zone_names:
-          - House_Furnace_Carr
+          - zone_1
         notify:
-          energy:           #Matches the value in the server POST...See z_record.json
-            entity_id: pushovern  #notify.XYZ
+          energy:
+            entity_id: pushover
             title: Furnace Energy Report
             message: Appended Report
             data:
@@ -69,28 +63,16 @@ and notifcations settings.
               - reheat
               - fangas
               - fan
-             - looppump
-          notifications:    #Matches the value in the server POST...See z_record.json
-            entity_id: pushovern  #notify.XYZ
-            title: Furnace Notification
-            #message: MyApped Message
-            data:
-              priority: 0
-              url: "https://www.home-assistant.io/"
-              #sound: pianobar
-              #attachment: "http://example.com/image.png"
-            delete:         #Deletes this DICT values before converting to YAML and sending.
-              - "@version"
+              - looppump
             muteable: True
-    scan_interval: 300
 
-Restart Home Assistant and the thermostat will appear.  Initially Home Assistant
-may not show real data from the actual thermostat.  The thermostat must check in
-with the HTTP server before any status information can be determined.  Likewise,
-temperature and other settings cannot be adjusted until the thermostat has sent
-its current configuration to the HTTP server.
+Restart Home Assistant and the thermostat will appear after the thermostat
+checks in with HA.  Until that time the entity will not be populated correctly.
+Likewise, changes made to the thermostat controls or changes made in the HA
+UI take time to refresh in because the theormostat must check in to inform HA of
+the updated settings.  Changes made in HA
 
-On subsequent restarts, the previous values will have been recorded reducing the 
+On subsequent restarts, the previous values will have been recorded reducing the
 boot time.
 
 # Notify
@@ -125,5 +107,5 @@ Carrier.  The other motivation is to try to make the HTTP server more maintainab
 than the Perl code in that project.
 
 The other project that formed a basis for the Home Assistant plugin is
-https://github.com/MizterB/homeassistant-infinitude from which the HomeAssistant 
+https://github.com/MizterB/homeassistant-infinitude from which the HomeAssistant
 Climate.py was based on.

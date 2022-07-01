@@ -1,10 +1,10 @@
 {
   "domain": "carrier_infinity",
   "name": "Carrier Infinity Thermostat",
-  "documentation": "https://www.github.com",
+  "documentation": "https://github.com/nfriess/carrier_infinity/blob/master/README.md",
   "dependencies": [],
   "codeowners": ["@nfriess",
                  "@njobrien1006"],
   "requirements": [],
-  "version": "v12.21.21"
+  "version": "v2.1.0"
 }
