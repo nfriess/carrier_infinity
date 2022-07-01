@@ -184,7 +184,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
     # Create devices
     zones = status["zones"]["zone"]
     for i in range(len(zones)):
-        zone_name = None
+        zone_name = zones[i]["name"]
         # Manually set zone names if defined in the platform configuration
         # Keep the system-defined zone name if a manual name is empty/None
         if "zone_names" in config and len(config["zone_names"]) >= i + 1:
@@ -193,8 +193,10 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
                 zone_name = name_override
         # Only create if the zone is enabled
         if zones[i]["enabled"] == "on":
+            zid = zones[i]["@id"]
+            _LOGGER.info(f"Zone ID {zid} called {zone_name} found")
             _zones.append(zone_name)
-            devices.append(_HTTPClientZone(_HTTPClient, zones[i]["@id"], zone_name))
+            devices.append(_HTTPClientZone(_HTTPClient, zid, zone_name))
     _HTTPClient.set_zones(_zones)
     add_devices(devices)
 
@@ -255,20 +257,18 @@ class c_HTTPClient:
         return None
 
     def HTTPServerThread(self):
-        _LOGGER.info("API Thread Start")
         with MyTCPServer((self.host, self.port), MyTCPHandler, self) as self.httpserver:
             try:
-                _LOGGER.info("Listen on ip:port {}:{}".format(self.host, self.port))
+                _LOGGER.info("Infinity component listening on ip:port {}:{}".format(self.host, self.port))
                 self.httpserver.serve_forever()
             except:
-                _LOGGER.info("API Thread Exception")
                 self.httpserver.server_close()
+                raise
 
     def HTTPServerKill(self):
         self.httpserver.shutdown()
-        _LOGGER.info("Server Kill.")
+        _LOGGER.info("Infinity component shutdown")
         self.setRecord()
-        _LOGGER.info("Set Record.")
         self.threadrunning = False
 
     async def _update_zones(self, method, path, serialNumber, data: dict = {}):
@@ -284,20 +284,20 @@ class c_HTTPClient:
                         self.my_record[sys_type] = data
             if sys_type == "config" or sys_type == "status":
                 for zone in self._zones:
-                    _LOGGER.info(f"Zone Update: {zone} Path: {path}")
+                    _LOGGER.debug(f"Zone Update: {zone} Path: {path}")
+                    eid = re.sub("[^0-9a-zA-Z]+", "_", zone.lower())
                     await self.hass.services.async_call("homeassistant", "update_entity", {
-                        "entity_id": f"climate.{zone.lower()}"
+                        "entity_id": f"climate.carrier_infinity_{eid}"
                         }, False)
             elif sys_type in self.notify:
                 await self.async_notify(sys_type, self.notify[sys_type])
         else:
-            _LOGGER.info(f"sys_type: {sys_type} serialNumber: {serialNumber}")
+            _LOGGER.debug(f"sys_type: {sys_type} serialNumber: {serialNumber}")
             if sys_type == serialNumber:
                 self.my_record["config"] = data["system"]["config"]
                 self.httpserver_running = True
-    
+
     def set_zones(self, zones):
-        _LOGGER.info(f"Set Zones: {zones}")
         self._zones = zones
 #===============================================================================
 #               Memory
@@ -373,7 +373,7 @@ class c_HTTPClient:
             return None
 
     def _pushovernotimute(self, mutecmd):
-        _LOGGER.info(f"PusherOver Mute Cmd: {mutecmd}")
+        _LOGGER.debug(f"PusherOver Mute Cmd: {mutecmd}")
         self.pushovernotimute = mutecmd
         return
 
@@ -408,10 +408,14 @@ class c_HTTPClient:
         return resp_data
 
 class _HTTPClientZone(ClimateEntity):
-    def __init__(self, _HTTPClient, zone_id, zone_name_custom=None):
+    def __init__(self, _HTTPClient, zone_id, zone_name):
         self._HTTPClient = _HTTPClient
         self.zone_id = zone_id
-        self.zone_name_custom = zone_name_custom
+        self.zone_name = zone_name
+
+        eid = re.sub("[^0-9a-zA-Z]+", "_", zone_name.lower())
+        self.entity_id = f"climate.carrier_infinity_{eid}"
+
         self.configupdateinter = 0
 
         self.system_status = {}
@@ -431,7 +435,6 @@ class _HTTPClientZone(ClimateEntity):
         self._uvlvl = None
         self._localtime = None
 
-        self.zone_name = None
         self.hold_state = None  # on, off
         self.hold_activity = None  # home, away, sleep, wake, manual
         self.hold_until = None  # HH:MM (on the quarter-hour)
@@ -458,10 +461,7 @@ class _HTTPClientZone(ClimateEntity):
     @property
     def name(self):
         """Return the name of the climate device."""
-        if self.zone_name_custom is not None:
-            return self.zone_name_custom
-        else:
-            return self.zone_name
+        return "Carrier Infinity " + self.zone_name
 
     @property
     def should_poll(self):
@@ -506,6 +506,7 @@ class _HTTPClientZone(ClimateEntity):
                 "Unable to retrieve data from HTTPServer: {}".format(e.reason)
             )
             return
+
 
         # Parse system data for zone-specific information
         self.zone_status = next(
@@ -622,7 +623,7 @@ class _HTTPClientZone(ClimateEntity):
                 period_datetime = datetime.datetime(
                     dt.year, dt.month, dt.day, int(period_hh), int(period_mm)
                 )
-                #_LOGGER.info(f"DT={dt.year}-{dt.month}-{dt.day}={int(period_hh)}:{int(period_mm)}")
+                #_LOGGER.debug(f"DT={dt.year}-{dt.month}-{dt.day}={int(period_hh)}:{int(period_mm)}")
                 if period_datetime < dt:
                     self.activity_scheduled = get_safe(period, "activity")
                     self.activity_scheduled_start = period_datetime
@@ -630,7 +631,7 @@ class _HTTPClientZone(ClimateEntity):
                     self.activity_next = get_safe(period, "activity")
                     self.activity_next_start = period_datetime
                     break
-                #_LOGGER.info(f"ACT={period}")
+                #_LOGGER.debug(f"ACT={period}")
             if self.activity_next is None:
                 dt = datetime.datetime(
                     year=dt.year, month=dt.month, day=dt.day

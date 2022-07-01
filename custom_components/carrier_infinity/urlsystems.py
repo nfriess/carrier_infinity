@@ -127,31 +127,31 @@ def urlApiZoneSetHold(request):
         return makeApiResponse(200, "OK", None)
 
     if not activityValue or activityValue not in ("home", "away", "sleep", "wake", "manual"):
-        _LOGGER.info("Bad activity value: %s", activityValue)
+        _LOGGER.warning("Bad activity value: %s", activityValue)
         return makeApiResponse(400, "Bad activity value", None)
 
     if untilValue:
 
         parts = untilValue.split(":")
         if len(parts) != 2 or len(parts[1]) != 2:
-            _LOGGER.info("Bad until value: %s", untilValue)
+            _LOGGER.warning("Bad until value: %s", untilValue)
             return makeApiResponse(400, "Bad until value", None)
 
         hourVal = int(parts[0])
         minuteVal = int(parts[1])
 
         if hourVal > 23 or hourVal < 0 or minuteVal > 59 or minuteVal < 0:
-            _LOGGER.info("Bad until value: %s", untilValue)
+            _LOGGER.warning("Bad until value: %s", untilValue)
             return makeApiResponse(400, "Bad until value", None)
 
         if minuteVal not in (0, 15, 30, 45):
-            _LOGGER.info("until minute must be in 15 min increments: %s", untilValue)
+            _LOGGER.warning("until minute must be in 15 min increments: %s", untilValue)
             return makeApiResponse(400, "until minute must be in 15 min increments", None)
 
     else:
 
         if zoneId not in configZones:
-            _LOGGER.info("Missing until value and no zone config")
+            _LOGGER.warning("Missing until value and no zone config")
             return makeApiResponse(400, "Missing until value and no zone config", None)
 
         zoneConfig = configZones[zoneId]
@@ -173,7 +173,7 @@ def urlApiZoneSetHold(request):
             activityEnd = findNextActivity(periods, now)
 
             if not activityEnd:
-                _LOGGER.info("Missing until value and cannot find next activity")
+                _LOGGER.warning("Missing until value and cannot find next activity")
                 return makeApiResponse(400, "Missing until value and cannot find next activity", None)
 
         untilValue = activityEnd
@@ -182,18 +182,18 @@ def urlApiZoneSetHold(request):
     if activityValue == "manual":
 
         if not tempValue:
-            _LOGGER.info("Missing temp value for manual")
+            _LOGGER.warning("Missing temp value for manual")
             return makeApiResponse(400, "Missing temp value for manual", None)
 
         tempValue = float(tempValue)
 
         if tempValue < 16 or tempValue > 24:
-            _LOGGER.info("temp value outside of range: %s", tempValue)
+            _LOGGER.warning("temp value outside of range: %s", tempValue)
             return makeApiResponse(400, "temp value outside of range", None)
 
         testVal = tempValue * 2
         if not testVal.is_integer():
-            _LOGGER.info("temp value must be in 0.5 increments: %s", tempValue)
+            _LOGGER.warning("temp value must be in 0.5 increments: %s", tempValue)
             return makeApiResponse(400, "temp value must be 0.5 increments", None)
 
     pendingActionHold = True
@@ -335,7 +335,7 @@ def urlSystemsProfile(request):
 
 	xmlBodyStr = request.bodyDict["data"][0]
 
-	_LOGGER.info("  body={}".format(xmlBodyStr))
+	_LOGGER.debug("  body={}".format(xmlBodyStr))
 
 	response = HttpResponse.okResponse()
 
@@ -357,7 +357,7 @@ def urlSystemsDealer(request):
 
     xmlBodyStr = request.bodyDict["data"][0]
 
-    _LOGGER.info("  body={}".format(xmlBodyStr))
+    _LOGGER.debug("  body={}".format(xmlBodyStr))
 
     response = HttpResponse.okResponse()
 
@@ -379,7 +379,7 @@ def urlSystemsIDUConfig(request):
 
     xmlBodyStr = request.bodyDict["data"][0]
 
-    _LOGGER.info("  body={}".format(xmlBodyStr))
+    _LOGGER.debug("  body={}".format(xmlBodyStr))
 
     response = HttpResponse.okResponse()
 
@@ -397,7 +397,7 @@ addUrl("/systems/(?P<serialNumber>.+)/idu_config$", urlSystemsIDUConfig)
 def urlSystemsidu_faults(request):
 
 	xmlStringData = request.bodyDict["data"][0]
-	_LOGGER.info("  idu_faults={}".format(xmlStringData))
+	_LOGGER.debug("  idu_faults={}".format(xmlStringData))
 
 	return makeSimpleXMLResponse()
 addUrl("/systems/(?P<serialNumber>.+)/idu_faults$", urlSystemsidu_faults)
@@ -407,7 +407,7 @@ def urlSystemsIDUStatus(request):
 
 	xmlBodyStr = request.bodyDict["data"][0]
 
-	_LOGGER.info("  body={}".format(xmlBodyStr))
+	_LOGGER.debug("  body={}".format(xmlBodyStr))
 
 	return makeSimpleXMLResponse()
 addUrl("/systems/(?P<serialNumber>.+)/idu_status$", urlSystemsIDUStatus)
@@ -419,7 +419,7 @@ def urlSystemsODUConfig(request):
 
     xmlBodyStr = request.bodyDict["data"][0]
 
-    _LOGGER.info("  body={}".format(xmlBodyStr))
+    _LOGGER.debug("  body={}".format(xmlBodyStr))
 
     response = HttpResponse.okResponse()
 
@@ -437,7 +437,7 @@ addUrl("/systems/(?P<serialNumber>.+)/odu_config$", urlSystemsODUConfig)
 def urlSystemsodu_faults(request):
 
 	xmlStringData = request.bodyDict["data"][0]
-	_LOGGER.info("  odu_faults={}".format(xmlStringData))
+	_LOGGER.debug("  odu_faults={}".format(xmlStringData))
 
 	return makeSimpleXMLResponse()
 addUrl("/systems/(?P<serialNumber>.+)/odu_faults$", urlSystemsodu_faults)
@@ -447,7 +447,7 @@ def urlSystemsODUStatus(request):
 
 	xmlBodyStr = request.bodyDict["data"][0]
 
-	_LOGGER.info("  body={}".format(xmlBodyStr))
+	_LOGGER.debug("  body={}".format(xmlBodyStr))
 
 	return makeSimpleXMLResponse()
 addUrl("/systems/(?P<serialNumber>.+)/odu_status$", urlSystemsODUStatus)
@@ -581,6 +581,7 @@ def urlSystemsStatus(request):
 	global activeThermostatId
 	global configFromDevice, systemstatus, statusZones, configZones, currentMode, tempUnits
 	global pendingActionHold, pendingActionActivity, pendingActionTemp, pendingActionUntil
+
 	xmlStringData = request.bodyDict["data"][0]
 
 	xmlRoot = ET.fromstring(xmlStringData)
@@ -658,7 +659,7 @@ addUrl("/systems/(?P<serialNumber>.+)/utility_events$", urlSystemsUtilityEvents)
 def urlSystemsEquipment_Events(request):
 
 	xmlStringData = request.bodyDict["data"][0]
-	_LOGGER.info("  Equipment_Events={}".format(xmlStringData))
+	_LOGGER.debug("  Equipment_Events={}".format(xmlStringData))
 
 	return makeSimpleXMLResponse()
 addUrl("/systems/(?P<serialNumber>.+)/equipment_events$", urlSystemsEquipment_Events)
@@ -666,7 +667,7 @@ addUrl("/systems/(?P<serialNumber>.+)/equipment_events$", urlSystemsEquipment_Ev
 def urlSystemsroot_cause(request):
 
 	xmlStringData = request.bodyDict["data"][0]
-	_LOGGER.info("  root_cause={}".format(xmlStringData))
+	_LOGGER.debug("  root_cause={}".format(xmlStringData))
 
 	return makeSimpleXMLResponse()
 addUrl("/systems/(?P<serialNumber>.+)/root_cause$", urlSystemsroot_cause)
@@ -674,7 +675,7 @@ addUrl("/systems/(?P<serialNumber>.+)/root_cause$", urlSystemsroot_cause)
 def urlSystemsequipment_events(request):
 
 	xmlStringData = request.bodyDict["data"][0]
-	_LOGGER.info("  equipment_events={}".format(xmlStringData))
+	_LOGGER.debug("  equipment_events={}".format(xmlStringData))
 
 	return makeSimpleXMLResponse()
 addUrl("/systems/(?P<serialNumber>.+)/equipment_events$", urlSystemsequipment_events)
@@ -683,7 +684,7 @@ addUrl("/systems/(?P<serialNumber>.+)/equipment_events$", urlSystemsequipment_ev
 def urlSystemsEnergy(request):
 
 	xmlStringData = request.bodyDict["data"][0]
-	_LOGGER.info("  Energy={}".format(xmlStringData))
+	_LOGGER.debug("  Energy={}".format(xmlStringData))
 
 	return makeSimpleXMLResponse()
 addUrl("/systems/(?P<serialNumber>.+)/energy$", urlSystemsEnergy)
@@ -692,7 +693,7 @@ addUrl("/systems/(?P<serialNumber>.+)/energy$", urlSystemsEnergy)
 def urlSystemsHistory(request):
 
 	xmlStringData = request.bodyDict["data"][0]
-	_LOGGER.info("  History={}".format(xmlStringData))
+	_LOGGER.debug("  History={}".format(xmlStringData))
 
 	return makeSimpleXMLResponse()
 addUrl("/systems/(?P<serialNumber>.+)/history$", urlSystemsHistory)
@@ -722,7 +723,7 @@ def urlSystemsNotifications(request):
 
 	xmlStringData = request.bodyDict["data"][0]
 
-	_LOGGER.info("  SN={}".format(request.pathDict["serialNumber"]))
+	_LOGGER.debug("  SN={}".format(request.pathDict["serialNumber"]))
 
 	xmlRoot = ET.fromstring(xmlStringData)
 
@@ -739,7 +740,7 @@ def urlSystemsNotifications(request):
 
 	# Save for api access?
 
-	_LOGGER.info("Thermostat notification: %s %s" % (responseCode, responseMessage))
+	_LOGGER.debug("Thermostat notification: %s %s" % (responseCode, responseMessage))
 
 	return makeSimpleXMLResponse()
 addUrl("/systems/(?P<serialNumber>.+)/notifications$", urlSystemsNotifications)
@@ -854,7 +855,7 @@ def urlSystemsRootCause(request):
 
 	xmlStringData = request.bodyDict["data"][0]
 
-	_LOGGER.info("Root Cause {}".format(xmlStringData))
+	_LOGGER.debug("Root Cause {}".format(xmlStringData))
 
 	return makeSystemsRootCauseResponse()
 addUrl("/systems/(?P<serialNumber>.+)/root_cause$", urlSystemsRootCause)
@@ -886,7 +887,7 @@ def urlsystems(request):
 	xmlStringData = request.bodyDict["data"][0]
 
 	_LOGGER.debug("  SN={}".format(serialNumber))
-	_LOGGER.info("  body={}".format(xmlStringData))
+	_LOGGER.debug("  body={}".format(xmlStringData))
 
 	xmlRoot = ET.fromstring(xmlStringData)
 

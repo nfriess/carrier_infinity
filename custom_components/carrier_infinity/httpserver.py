@@ -94,6 +94,7 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
             if http_method == HttpRequest.METHOD_POST:
 
                 if not httpRequestObj.contentLength or not httpRequestObj.contentType:
+                    _LOGGER.warning("Request missing content length or type")
                     return httpRequestObj
 
                 # We use a non-blocking socket and set a timeout to try and limit
@@ -144,10 +145,8 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
             # A basic access log
             if httpResponseObj.code == 404:
                 _LOGGER.info("Request from {}:{} {} {} {} {}".format(self.client_address[0], self.client_address[1], httpRequestObj.method, httpRequestObj.path, httpResponseObj.code, logBodyStr))
-                _LOGGER.info(f"FullBody Request: {httpRequestObj.body}")
             elif httpResponseObj.code == 503:
                 _LOGGER.info("Request from {}:{} {} {} {} {}".format(self.client_address[0], self.client_address[1], httpRequestObj.method, httpRequestObj.path, httpResponseObj.code, logBodyStr))
-                _LOGGER.info(f"FullBody Request: {httpRequestObj.body}")
             else:
                 _LOGGER.debug("Request from {}:{} {} {} {} {}".format(self.client_address[0], self.client_address[1], httpRequestObj.method, httpRequestObj.path, httpResponseObj.code, logBodyStr))
 
@@ -194,9 +193,8 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
                         path = httpRequestObj.path
                         httpResponseObj = actionFunc(httpRequestObj)
                     except Exception as exception:
-                        traceback.print_exc()
-                        _LOGGER.info(f"Path Hit: {httpRequestObj.path}")
-                        _LOGGER.debug("Something really wrong happend! - %s", exception)
+                        #traceback.print_exc()
+                        _LOGGER.error("Something really wrong happend! - %s", exception)
                         self.sendResponse(httpRequestObj, HttpResponse.errorResponse(503, "Exception thrown"))
                         return
                     break
@@ -211,11 +209,11 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
             if path[:len(string)] == string:
                 time.sleep(0.1)
                 self.sendResponse(httpRequestObj, httpResponseObj)
-                serialNumber = httpRequestObj.pathDict["serialNumber"]
-                xmlStringData = httpRequestObj.bodyDict["data"][0]
-                if httpRequestObj.method == "POST":
+                if httpRequestObj.method == "POST" and "data" in httpRequestObj.bodyDict:
+                    serialNumber = httpRequestObj.pathDict["serialNumber"]
+                    xmlStringData = httpRequestObj.bodyDict["data"][0]
                     DICT = xmltodict.parse(xmlStringData, dict_constructor=dict)
-                self._HTTPClient.hass.async_create_task(self._HTTPClient._update_zones(httpRequestObj.method, httpRequestObj.path, serialNumber, DICT))
+                    self._HTTPClient.hass.async_create_task(self._HTTPClient._update_zones(httpRequestObj.method, httpRequestObj.path, serialNumber, DICT))
             else:
                 self.sendResponse(httpRequestObj, httpResponseObj)
 

@@ -93,8 +93,11 @@ class HttpRequest:
 
         contentType = self.contentType.lower()
 
-        if self.contentType == "application/x-www-form-urlencoded":
+        if contentType == "application/x-www-form-urlencoded":
             self.bodyDict = parse_qs(self.body, keep_blank_values=True)
+        else:
+            raise Exception(f"Unhandled content-type: {contentType}")
+
 
 
 #
