@@ -11,23 +11,17 @@ from datetime import datetime
 
 from .httpobj import HttpRequest, HttpResponse, addUrl
 
-
 responseManifest = None
 
-def loadXMLFiles():
+def loadXMLFiles(hass):
 
 	global responseManifest
 
 	responseManifest = ""
 
-	with open("/config/custom_components/carrier_infinity/manifest.xml", 'r') as fhan:
+	with open(hass.config.path("custom_components/carrier_infinity/manifest.xml"), 'r') as fhan:
 		for line in fhan:
 			responseManifest = responseManifest + line
-
-
-loadXMLFiles()
-
-
 
 
 def urlManifest(request):

@@ -304,12 +304,12 @@ class c_HTTPClient:
 #===============================================================================
 
     def getRecord(self):
-        if os.path.exists("/config/custom_components/carrier_infinity/z_record.json"):
+        if os.path.exists(self.hass.config.path("custom_components/carrier_infinity/z_record.json")):
             with open("/config/custom_components/carrier_infinity/z_record.json", "r") as json_file:
                 self.my_record = json.load(json_file)
 
     def setRecord(self):
-        with open("/config/custom_components/carrier_infinity/z_record.json", 'w') as outfile:
+        with open(self.hass.config.path("custom_components/carrier_infinity/z_record.json"), 'w') as outfile:
                 json.dump(self.my_record, outfile, indent=4)
 
 #===============================================================================

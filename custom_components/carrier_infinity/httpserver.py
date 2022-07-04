@@ -176,9 +176,11 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
 
         def handle(self):
             self._HTTPClient = self.server._HTTPClient
-            #self.update_entity = self.server.update_entity
             httpRequestObj = self.parseHttpRequest()
-            
+
+            if not responseManifest:
+                loadXMLFiles(self._HTTPClient.hass)
+
             if not httpRequestObj:
                 return
 
