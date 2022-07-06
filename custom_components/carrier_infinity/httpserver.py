@@ -172,8 +172,7 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
                 except:
                     dataToSend = httpResponseObj.body
                 os.write(fileno, dataToSend)
-
-            os.close(fileno)
+                os.close(fileno)
 
 
         def handle(self):
