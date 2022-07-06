@@ -173,6 +173,8 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
                     dataToSend = httpResponseObj.body
                 os.write(fileno, dataToSend)
 
+            os.close(fileno)
+
 
         def handle(self):
             self._HTTPClient = self.server._HTTPClient

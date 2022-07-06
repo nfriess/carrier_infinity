@@ -253,7 +253,10 @@ class c_HTTPClient:
         self.thread = threading.Thread(target=self.HTTPServerThread)
         self.threadrunning = True
         self.thread.start()
-        self.getRecord()
+        try:
+            self.getRecord()
+        except:
+            pass
         return None
 
     def HTTPServerThread(self):
