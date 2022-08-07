@@ -3,14 +3,22 @@
 # is callable as a main module.
 #
 
+import datetime
 import logging
 import os
+from pathlib import Path
 import socketserver
+import sys
 import time
 import traceback
 import re
 import json
 import xmltodict
+
+if __name__ == '__main__' and __package__ is None:
+    DIR = Path(__file__).resolve().parent
+    sys.path.insert(0, str(DIR.parent))
+    __package__ = DIR.name
 
 from .httpobj import HttpRequest, HttpResponse, configuredURLs
 from .urlalive import *
@@ -18,7 +26,6 @@ from .urlsystems import *
 from .urlweather import *
 from .urltime import *
 from .urlmanifest import *
-#from .urlapi import *
 from .urlrelnodes import *
 
 _LOGGER: logging.Logger = logging.getLogger(__package__)
@@ -172,15 +179,23 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
                 except:
                     dataToSend = httpResponseObj.body
                 os.write(fileno, dataToSend)
-                os.close(fileno)
+
+                _LOGGER.debug("  Deferring close of {}".format(fileno))
+
+                self.server.deferredCloseSockets.append({
+                    "fileno": fileno,
+                    "time": datetime.now()
+                })
 
 
         def handle(self):
-            self._HTTPClient = self.server._HTTPClient
             httpRequestObj = self.parseHttpRequest()
 
             if not responseManifest:
-                loadXMLFiles(self._HTTPClient.hass)
+                if self.server._HTTPClient:
+                    loadXMLFiles(self.server._HTTPClient.hass)
+                else:
+                    loadXMLFiles(None)
 
             if not httpRequestObj:
                 return
@@ -216,12 +231,34 @@ class MyTCPHandler(socketserver.StreamRequestHandler):
                     serialNumber = httpRequestObj.pathDict["serialNumber"]
                     xmlStringData = httpRequestObj.bodyDict["data"][0]
                     DICT = xmltodict.parse(xmlStringData, dict_constructor=dict)
-                    self._HTTPClient.hass.async_create_task(self._HTTPClient._update_zones(httpRequestObj.method, httpRequestObj.path, serialNumber, DICT))
+                    if self.server._HTTPClient:
+                        self.server._HTTPClient.hass.async_create_task(self.server._HTTPClient._update_zones(httpRequestObj.method, httpRequestObj.path, serialNumber, DICT))
             else:
                 self.sendResponse(httpRequestObj, httpResponseObj)
+
+            for obj in self.server.deferredCloseSockets:
+                elapsed = datetime.now() - obj["time"]
+                if elapsed.total_seconds() > 60:
+                    _LOGGER.debug("  Closing deferred file number {}".format(obj["fileno"]))
+                    os.close(obj["fileno"])
+                    self.server.deferredCloseSockets.remove(obj)
+
 
 class MyTCPServer(socketserver.TCPServer):
 
     def __init__(self, host_port_tuple, streamhandler, _HTTPClient):
         super().__init__(host_port_tuple, streamhandler)
         self._HTTPClient = _HTTPClient
+        self.deferredCloseSockets = []
+
+
+if __name__ == '__main__':
+    host = "0.0.0.0"
+    port = 5000
+    logging.basicConfig(level=logging.INFO)
+    with MyTCPServer((host, port), MyTCPHandler, None) as httpserver:
+        try:
+            httpserver.serve_forever()
+        except:
+            httpserver.server_close()
+            raise
