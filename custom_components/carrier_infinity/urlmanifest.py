@@ -15,13 +15,17 @@ responseManifest = None
 
 def loadXMLFiles(hass):
 
-	global responseManifest
+    global responseManifest
 
-	responseManifest = ""
+    configpath = "manifest.xml"
+    if hass:
+        configpath = hass.config.path("custom_components/carrier_infinity/manifest.xml")
 
-	with open(hass.config.path("custom_components/carrier_infinity/manifest.xml"), 'r') as fhan:
-		for line in fhan:
-			responseManifest = responseManifest + line
+    responseManifest = ""
+
+    with open(configpath, 'r') as fhan:
+        for line in fhan:
+            responseManifest = responseManifest + line
 
 
 def urlManifest(request):

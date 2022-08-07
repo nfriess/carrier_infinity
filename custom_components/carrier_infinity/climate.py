@@ -164,7 +164,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
         time.sleep(10)
         status = _HTTPClient.status()
         failcnt =  failcnt + 1
-        if failcnt >= 30:
+        if failcnt >= 300:
             _LOGGER.warning(f"Setup Failed on Timeout - Config.")
             return False
             
