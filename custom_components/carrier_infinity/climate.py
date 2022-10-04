@@ -3,22 +3,19 @@ Platform for exposing a Carrier Infinity Touch climate device through the
 HTTPClient proxy application
 """
 from homeassistant.core import Event
-from homeassistant.components.climate import ClimateEntity, PLATFORM_SCHEMA
+from homeassistant.components.climate import (
+    ClimateEntity,
+    ClimateEntityFeature,
+    HVACMode,
+    HVACAction,
+    PLATFORM_SCHEMA
+)
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.components.climate.const import (
-    HVAC_MODE_OFF,
-    HVAC_MODE_HEAT,
-    HVAC_MODE_COOL,
-    HVAC_MODE_HEAT_COOL,
-    HVAC_MODE_FAN_ONLY,
     FAN_AUTO,
     FAN_LOW,
     FAN_MEDIUM,
     FAN_HIGH,
-    CURRENT_HVAC_OFF,
-    CURRENT_HVAC_HEAT,
-    CURRENT_HVAC_COOL,
-    CURRENT_HVAC_IDLE,
     ATTR_TARGET_TEMP_HIGH,
     ATTR_TARGET_TEMP_LOW,
     SUPPORT_TARGET_TEMPERATURE,
@@ -747,20 +744,20 @@ class _HTTPClientZone(ClimateEntity):
     @property
     def hvac_mode(self):
         """Return hvac operation ie. heat, cool mode.
-        Need to be one of HVAC_MODE_*.
+        Need to be one of HVACMode.*
         """
         if self._hvac_mode == "heat":
-            return HVAC_MODE_HEAT
+            return HVACMode.HEAT
         elif self._hvac_mode == "cool":
-            return HVAC_MODE_COOL
+            return HVACMode.COOL
         elif self._hvac_mode == "auto":
-            return HVAC_MODE_HEAT_COOL
+            return HVACMode.HEAT_COOL
         elif self._hvac_mode == "fanonly":
-            return HVAC_MODE_FAN_ONLY
+            return HVACMode.FAN_ONLY
         elif self._hvac_mode == "off":
-            return HVAC_MODE_OFF
+            return HVACMode.OFF
         else:
-            return HVAC_MODE_OFF
+            return HVACMode.OFF
 
     @property
     def hvac_modes(self):
@@ -768,29 +765,29 @@ class _HTTPClientZone(ClimateEntity):
         Need to be a subset of HVAC_MODES.
         """
         return [
-            HVAC_MODE_OFF,
-            HVAC_MODE_HEAT,
-            HVAC_MODE_COOL,
-            HVAC_MODE_HEAT_COOL,
-            HVAC_MODE_FAN_ONLY,
+            HVACMode.OFF,
+            HVACMode.HEAT,
+            HVACMode.COOL,
+            HVACMode.HEAT_COOL,
+            HVACMode.FAN_ONLY,
         ]
 
     @property
     def hvac_action(self):
         """Return the current running hvac operation if supported.
-        Need to be one of CURRENT_HVAC_*.
+        Need to be one of HVACAction.*
         """
         # TODO: Add logic for fan
-        if self.hvac_mode == HVAC_MODE_OFF:
-            return CURRENT_HVAC_OFF
+        if self.hvac_mode == HVACMode.OFF:
+            return HVACAction.OFF
         elif self._hvac_action == "idle":
-            return CURRENT_HVAC_IDLE
+            return HVACAction.IDLE
         elif "heat" in self._hvac_action:
-            return CURRENT_HVAC_HEAT
+            return HVACAction.HEATING
         elif "cool" in self._hvac_action:
-            return CURRENT_HVAC_COOL
+            return HVACAction.COOLING
         else:
-            return CURRENT_HVAC_IDLE
+            return HVACAction.IDLE
 
     @property
     def current_temperature(self):
@@ -801,20 +798,20 @@ class _HTTPClientZone(ClimateEntity):
     def target_temperature(self):
         """Return the temperature we try to reach."""
 
-        # Infinity 'auto' mode maps to HVAC_MODE_HEAT_COOL.
+        # Infinity 'auto' mode maps to HVACMode.HEAT_COOL.
         # If enabled, set target temperature based on the current HVAC_action
-        if self.hvac_mode == HVAC_MODE_HEAT_COOL:
-            if self.hvac_action == CURRENT_HVAC_HEAT:
+        if self.hvac_mode == HVACMode.HEAT_COOL:
+            if self.hvac_action == HVACAction.HEATING:
                 return self.setpoint_heat
-            elif self.hvac_action == CURRENT_HVAC_COOL:
+            elif self.hvac_action == HVACAction.COOLING:
                 return self.setpoint_cool
             else:
                 return self.current_temperature
 
-        elif self.hvac_mode == HVAC_MODE_HEAT:
+        elif self.hvac_mode == HVACMode.HEAT:
             return self.setpoint_heat
 
-        elif self.hvac_mode == HVAC_MODE_COOL:
+        elif self.hvac_mode == HVACMode.COOL:
             return self.setpoint_cool
 
         else:
@@ -891,10 +888,10 @@ class _HTTPClientZone(ClimateEntity):
         """Set new target temperature."""
         data = {}
         if ATTR_TEMPERATURE in kwargs:
-            if self.hvac_mode == HVAC_MODE_HEAT:
+            if self.hvac_mode == HVACMode.HEAT:
                 self.setpoint_heat = kwargs["temperature"]
                 data["htsp"] = kwargs["temperature"]
-            elif self.hvac_mode == HVAC_MODE_COOL:
+            elif self.hvac_mode == HVACMode.COOL:
                 self.setpoint_cool = kwargs["temperature"]
                 data["clsp"] = kwargs["temperature"]
 
@@ -917,7 +914,22 @@ class _HTTPClientZone(ClimateEntity):
         """Set new target fan mode.
         When set to 'auto', map to Infinity's internal value of 'off'
         """
-        raise NotImplementedError
+
+        if fan_mode == FAN_AUTO:
+            self._fan_mode = "off"
+        elif fan_mode == FAN_HIGH:
+            self._fan_mode = "high"
+        elif fan_mode == FAN_MEDIUM:
+            self._fan_mode = "med"
+        elif fan_mode == FAN_LOW:
+            self._fan_mode = "low"
+        else:
+            _LOGGER.error("Invalid fan mode: {}".format(fan_mode))
+            return
+
+        data = {"fan": self._fan_mode}
+
+        self._HTTPClient.api("/api/config/zones/zone/{}/fan/".format(self.zone_index), data)
 
     def set_hvac_mode(self, hvac_mode):
         """Set new target hvac mode."""
@@ -977,9 +989,9 @@ class _HTTPClientZone(ClimateEntity):
     def supported_features(self):
         """Return the list of supported features."""
         baseline_features = SUPPORT_FAN_MODE | SUPPORT_PRESET_MODE
-        if self.hvac_mode == HVAC_MODE_HEAT_COOL:
+        if self.hvac_mode == HVACMode.HEAT_COOL:
             return baseline_features | SUPPORT_TARGET_TEMPERATURE_RANGE
-        elif self.hvac_mode in [HVAC_MODE_HEAT, HVAC_MODE_COOL]:
+        elif self.hvac_mode in [HVACMode.HEAT, HVACMode.COOL]:
             return baseline_features | SUPPORT_TARGET_TEMPERATURE
         else:
             return baseline_features
