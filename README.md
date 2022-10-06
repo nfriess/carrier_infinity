@@ -66,6 +66,14 @@ and notifcations settings.
               - looppump
             muteable: True
 
+If using docker you will need to modify your configuration to expose port 5000
+(or whatever port you configured above) to your network.  For example, if using
+docker-compose your ports section of your configuration would look like this:
+
+      ports:
+        - "5000:5000"
+        - "8123:8123"
+
 Restart Home Assistant and the thermostat will appear after the thermostat
 checks in with HA.  Until that time the entity will not be populated correctly.
 Likewise, changes made to the thermostat controls or changes made in the HA
@@ -77,7 +85,7 @@ boot time.
 
 # Notify
 
-Notify has been imbedded to send alerts on configured messages.
+Notify has been embedded to send alerts on configured messages.
 
 # Design
 
