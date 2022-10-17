@@ -164,7 +164,7 @@ def setup_platform(hass, config, add_devices, discovery_info=None):
         if failcnt >= 300:
             _LOGGER.warning(f"Setup Failed on Timeout - Config.")
             return False
-            
+
     devcfg = None
     failcnt = 0
     while devcfg == None:
@@ -474,7 +474,7 @@ class _HTTPClientZone(ClimateEntity):
     def update(self):
         if self._last_run() < 30:
             return
-        
+
         self.last_run = time.time()
         def get_safe(source, key, index=0, empty_dict_as_none=True):
             """Helper function to safely parse JSON coming from HTTPServer,
@@ -581,7 +581,7 @@ class _HTTPClientZone(ClimateEntity):
                 (
                     a
                     for a in get_safe(self.zone_config, "activities")["activity"]
-                    if a["id"] == "manual"
+                    if "id" in a and a["id"] == "manual"
                 ),
                 None,
             )
@@ -904,7 +904,7 @@ class _HTTPClientZone(ClimateEntity):
             data["htsp"] = kwargs[ATTR_TARGET_TEMP_LOW]
 
         self.set_hold_mode(activity=ACTIVITY_MANUAL,temp=kwargs["temperature"])
-        
+
 
     def set_humidity(self, humidity):
         """Set new target humidity."""
