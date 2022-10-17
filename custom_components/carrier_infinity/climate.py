@@ -581,7 +581,7 @@ class _HTTPClientZone(ClimateEntity):
                 (
                     a
                     for a in get_safe(self.zone_config, "activities")["activity"]
-                    if "id" in a and a["id"] == "manual"
+                    if "@id" in a and a["@id"] == "manual"
                 ),
                 None,
             )
